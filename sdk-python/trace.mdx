@@ -1,0 +1,121 @@
+---
+title: "TraceContext"
+description: "Build the conversation transcript that gets attached to audit events."
+icon: "route"
+---
+
+```python
+from agent_governance import (
+    AssistantMessage,
+    ToolCallMessage,
+    ToolResultMessage,
+    TraceContext,
+    UserMessage,
+)
+```
+
+A `TraceContext` is a running list of messages that represents the conversation up to the current tool call. When you pass `trace=trace` to `evaluate()`, the SDK appends a `ToolCallMessage` automatically and uploads the whole list to `/v1/traces`. The dashboard's audit drawer renders it on click.
+
+## Constructor
+
+```python
+trace = TraceContext()
+```
+
+That's it. No required arguments.
+
+## Methods
+
+### `append(message)`
+
+Add a message. Messages are typed.
+
+```python
+trace.append(UserMessage(content="Help me clean up old logs"))
+trace.append(AssistantMessage(content="I'll start by listing them."))
+```
+
+### `messages: list[BaseMessage]`
+
+The current message list. Read-only — use `append` to mutate.
+
+## Message types
+
+### `UserMessage`
+
+```python
+UserMessage(content="…")
+```
+
+What the user typed (or its analog in non-chat agents).
+
+### `AssistantMessage`
+
+```python
+AssistantMessage(content="…")
+```
+
+What the model said back. Pass each turn as a fresh message.
+
+### `ToolCallMessage`
+
+```python
+ToolCallMessage(toolName="delete_file", args={"path": "/tmp/foo"}, toolUseId="abc")
+```
+
+A tool call the model wants to make. **You don't usually construct these manually** — `evaluate(trace=trace)` appends one for you. Construct manually only when you're building traces outside the `evaluate` flow.
+
+### `ToolResultMessage`
+
+```python
+ToolResultMessage(content="deleted /tmp/foo", isError=False, toolUseId="abc")
+```
+
+The result of a tool call. **You append this yourself after the tool runs** (or after a deny).
+
+## Typical loop
+
+```python
+trace = TraceContext()
+
+# 1. User turn
+trace.append(UserMessage(content=user_prompt))
+
+# 2. Model turn (assistant text)
+trace.append(AssistantMessage(content=model_text))
+
+# 3. evaluate() appends ToolCallMessage automatically
+result = gov.evaluate(
+    tool_name=tool,
+    session_id=session,
+    metadata=EvaluationMetadata(input=tool_input),
+    trace=trace,
+)
+
+# 4. You append ToolResultMessage
+if result.decision == "allow":
+    actual = run_tool(tool, tool_input)
+    trace.append(ToolResultMessage(content=str(actual), isError=False))
+else:
+    trace.append(ToolResultMessage(content=f"Denied: {result.reason}", isError=True))
+
+# 5. Loop
+```
+
+## What gets uploaded
+
+Every `evaluate(trace=trace)` uploads the **full current `trace.messages` list**. This means:
+
+- Storage cost is `O(messages × evaluations)` — the trace grows over the course of a conversation.
+- The dashboard always sees the "trace at the time of this call," so a row from earlier in the conversation has a shorter trace than a row from later.
+- Each upload returns a `traceId` and `tracePosition` (which message in the trace this `evaluate()` is for) which get pinned on the audit event.
+
+For long conversations, you may want to compact the trace periodically (e.g., summarize the first N turns into one message). The SDK doesn't do this automatically — it's a tradeoff between fidelity and storage.
+
+## Working with framework adapters
+
+The [Claude Agent adapter](/adapters/claude-agent) builds the `TraceContext` for you from hook payloads — you just enable it. The MCP and LangChain adapters accept a `TraceContext` you pass in; you maintain user/assistant turns yourself.
+
+## Off mode
+
+If you don't want trace upload at all, just don't pass `trace=` to `evaluate()`. The audit event is still recorded; the trace drawer in the dashboard will show its empty state.

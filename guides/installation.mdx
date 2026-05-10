@@ -1,0 +1,90 @@
+---
+title: "Installation"
+description: "Run the Rubric control plane locally and install the SDK in your agent project."
+icon: "download"
+---
+
+There are two pieces to install: the **control plane** (API + dashboard) and the **SDK** (drops into your agent code). For local development you typically run both on the same machine.
+
+## Control plane
+
+The control plane is an open-source monorepo at [github.com/getrubric/platform](https://github.com/getrubric/platform). It contains:
+
+- **API** — Fastify + Drizzle + Postgres. Listens on port 3001.
+- **Web dashboard** — Next.js 15 App Router + Clerk. Listens on port 3000.
+- **Shared schemas** — TypeScript Zod schemas mirrored to Pydantic in the SDK.
+
+### Prerequisites
+
+<Steps>
+  <Step title="Postgres 15+">
+    The API uses Drizzle migrations against a local Postgres. `createdb agent_governance` is enough — no extensions required.
+  </Step>
+  <Step title="Node 20+ and pnpm">
+    The monorepo uses pnpm workspaces. `npm install -g pnpm` if you don't have it.
+  </Step>
+  <Step title="Clerk dev project (free)">
+    Sign in to [clerk.com](https://clerk.com) and create a development app. You'll need the secret key and publishable key.
+  </Step>
+</Steps>
+
+### Run it
+
+```bash
+git clone https://github.com/getrubric/platform.git rubric
+cd rubric
+pnpm install
+cp .env.example .env
+# Fill in DATABASE_URL, CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, IDENTITY_KEK
+pnpm db:migrate
+pnpm dev
+```
+
+`pnpm dev` brings up both the API (`:3001`) and the dashboard (`:3000`) in parallel. Open [http://localhost:3000](http://localhost:3000) and sign in with your Clerk account.
+
+<Note>
+**`IDENTITY_KEK`** is a base64-encoded 32-byte key used to encrypt agent private keys at rest. Generate one with `openssl rand -base64 32` and save it — losing it makes existing identities unrecoverable.
+</Note>
+
+## SDK
+
+The Python SDK is published as `agent-governance` on PyPI.
+
+<CodeGroup>
+```bash pip
+pip install agent-governance
+```
+
+```bash uv
+uv add agent-governance
+```
+
+```bash poetry
+poetry add agent-governance
+```
+</CodeGroup>
+
+### Optional extras
+
+Choose the extra(s) matching your agent framework. Each extra is a thin adapter that wraps the framework's tool-dispatch hook so every call is governed.
+
+| Extra | When to use it |
+| --- | --- |
+| `agent-governance[mcp]` | Anything that speaks the Model Context Protocol. |
+| `agent-governance[claude-agent]` | Claude Agent SDK (`claude-agent-sdk`). |
+| `agent-governance[langchain]` | LangChain `BaseTool` lists. |
+| `agent-governance[runtime]` | Optional native evaluator backend (Rust). Faster, identical semantics. |
+| `agent-governance[presidio]` | Presidio-backed DLP detection. |
+
+You can stack them: `pip install 'agent-governance[mcp,runtime,presidio]'`.
+
+## Verify
+
+Once both pieces are up:
+
+```bash
+curl http://localhost:3001/health
+# {"ok":true}
+```
+
+Then walk through the [Quickstart](/guides/quickstart) to enroll your first agent.

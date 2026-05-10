@@ -1,33 +1,72 @@
 ---
-title: 'Introduction'
-description: 'Example section for showcasing API endpoints'
+title: "REST API"
+description: "Every endpoint, every header, every error code."
+icon: "terminal"
 ---
 
-<Note>
-  If you're not looking to build API reference documentation, you can delete
-  this section by removing the api-reference folder.
-</Note>
+The Rubric REST API is the source of truth for everything the dashboard and the SDK do. It's stable, versioned (`/v1`), and documented here.
 
-## Welcome
+## Base URLs
 
-There are two ways to build API documentation: [OpenAPI](https://mintlify.com/docs/api-playground/openapi/setup) and [MDX components](https://mintlify.com/docs/api-playground/mdx/configuration). For the starter kit, we are using the following OpenAPI specification.
+| Environment | URL |
+| --- | --- |
+| Local | `http://localhost:3001` |
+| Production (deployed control plane) | Your URL |
 
-<Card
-  title="Plant Store Endpoints"
-  icon="leaf"
-  href="https://github.com/mintlify/starter/blob/main/api-reference/openapi.json"
->
-  View the OpenAPI specification file
-</Card>
+## Endpoints by direction
 
-## Authentication
+The API has three groups of routes, distinguished by **who calls them** and **what authenticates the call**.
 
-All API endpoints are authenticated using Bearer tokens and picked up from the specification file.
+### SDK direction (your agent → control plane)
 
-```json
-"security": [
-  {
-    "bearerAuth": []
-  }
-]
-```
+These are called by the Rubric SDK in your agent process. They authenticate with a **JWT-SVID** issued at enrollment.
+
+| Method | Path | Page |
+| --- | --- | --- |
+| `POST` | `/v1/identities/exchange` | [Exchange a provisioning secret](/api-reference/identities-exchange) |
+| `POST` | `/v1/identities/enroll` | [Enroll via token](/api-reference/identities-enroll) |
+| `POST` | `/v1/identities/refresh` | [Refresh a JWT](/api-reference/identities-refresh) |
+| `GET`  | `/v1/bundle` | [Pull the policy bundle](/api-reference/bundle) |
+| `POST` | `/v1/events` | [Ship audit events](/api-reference/events) |
+| `POST` | `/v1/traces` | [Upload a trace](/api-reference/traces) |
+
+### Dashboard direction (operator → control plane)
+
+These are called by the dashboard (and you can call them directly from CI). They authenticate with a **Clerk session token**.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET / POST / PATCH / DELETE` | `/v1/agents`, `/v1/agents/:id`, `/v1/agents/:id/identities`, `/v1/agents/:id/activity` | Agent CRUD + identity issuance + per-agent activity. |
+| `GET / POST / PATCH / DELETE` | `/v1/policies`, `/v1/policies/:id`, `/v1/policies/:id/activity` | Policy authoring + per-policy activity. |
+| `GET` | `/v1/policy-templates` | Starter templates. |
+| `GET` | `/v1/insights` | Aggregate timeseries / top-tools / top-deny-reasons. |
+| `GET / POST / DELETE` | `/v1/enrollment-tokens`, `/v1/enrollment-tokens/:id`, `/v1/enrollment-tokens/:id/renew` | Manage enrollment tokens. |
+| `GET / PATCH` | `/v1/incidents`, `/v1/incidents/:id`, `/v1/incidents/:id/timeline` | Incident triage. |
+| `GET` | `/v1/audit`, `/v1/audit/:id/trace` | [Audit log + trace fetch](/api-reference/audit). |
+
+### Public
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/health` | None | Liveness probe. Returns `{"ok":true}`. |
+
+## Versioning
+
+Everything is mounted under `/v1`. Breaking changes will land under `/v2` with a deprecation period; the current `v1` is stable and we don't plan a `v2` in the near term.
+
+## Content types
+
+- **Requests** — `application/json`.
+- **Successful responses** — `application/json`.
+- **Errors** — `application/problem+json` (RFC 9457).
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api-reference/authentication">
+    JWT-SVID, enrollment tokens, Clerk sessions.
+  </Card>
+  <Card title="Errors" icon="circle-exclamation" href="/api-reference/errors">
+    RFC 9457 problem shapes and the catalog.
+  </Card>
+</CardGroup>

@@ -1,0 +1,109 @@
+---
+title: "LangChain adapter"
+description: "Wrap any list of LangChain tools so each invocation is governed."
+icon: "link"
+---
+
+The LangChain adapter takes a list of `BaseTool`s and returns a parallel list with the same names and schemas, but each `func`/`_run` is wrapped to run through governance first.
+
+## Install
+
+```bash
+pip install 'agent-governance[langchain]'
+```
+
+Pulls `langchain-core` as a peer dep. Compatible with langchain-core 0.3.x.
+
+## Basic usage
+
+```python
+from agent_governance import Governance
+from agent_governance.adapters.langchain import govern_tools, GovernanceDeniedError
+from langchain_core.tools import tool
+
+@tool
+def list_files(path: str) -> str:
+    """List files in a directory."""
+    return f"... files in {path}"
+
+@tool
+def delete_file(path: str) -> str:
+    """Delete a file."""
+    return f"deleted {path}"
+
+with Governance.bootstrap(agent_name="ops-bot") as gov:
+    governed = govern_tools(gov, [list_files, delete_file], session_id="ops-session")
+
+    # Bind `governed` to your agent in place of the originals.
+    agent = create_react_agent(llm, governed, prompt)
+    agent.invoke({"input": "Delete /tmp/foo"})
+```
+
+`govern_tools` returns a new list — the originals are not mutated. Drop `governed` into wherever you would have passed `[list_files, delete_file]`.
+
+## What you pass to `evaluate()`
+
+For each governed call:
+
+- **`tool_name`** = `tool.name` (the LangChain tool's name).
+- **`args.<index>`** = positional arguments.
+- **`kwargs.<key>`** = keyword arguments.
+- **`framework`** = `"langchain"` on the audit event.
+
+A typical policy targets `tool_name` and one of the `kwargs` fields:
+
+```yaml
+rules:
+  - id: only-read-tmp
+    effect: deny
+    conditions:
+      - field: tool_name
+        operator: eq
+        value: read_file
+      - field: kwargs.path
+        operator: starts_with
+        value: "/etc/"
+```
+
+## Denied calls
+
+Unlike MCP and Claude Agent, LangChain has no native deny channel — tools either return a value or raise. The adapter raises:
+
+```python
+class GovernanceDeniedError(PermissionError):
+    """Raised when a tool call is denied by an active policy."""
+```
+
+LangChain's agent loop sees `PermissionError`, surfaces it as a tool failure to the model, and the model adapts. If you'd rather catch the deny and handle it yourself, wrap your invocation:
+
+```python
+from agent_governance.adapters.langchain import GovernanceDeniedError
+
+try:
+    agent.invoke({"input": "Delete /tmp/foo"})
+except GovernanceDeniedError as e:
+    log.warning("agent attempted denied action: %s", e)
+```
+
+## StructuredTool support
+
+`StructuredTool`s (with `args_schema`) are preserved — the wrapper rebuilds the tool with the same schema so the agent's prompt and validation are unchanged. Plain `Tool`s and `@tool`-decorated functions also work.
+
+If a tool has neither a `func` nor a `_run` (rare; usually a custom subclass with overridden `invoke`), the adapter passes it through unwrapped and logs a warning.
+
+## With traces
+
+```python
+from agent_governance import TraceContext
+
+trace = TraceContext()
+governed = govern_tools(gov, tools, session_id="ops-session", trace=trace)
+
+# Append user/assistant messages around `agent.invoke(...)` as your loop runs.
+```
+
+The adapter doesn't have hooks for user/assistant messages — that's your harness's job. The adapter only appends `ToolCallMessage`s when calls happen.
+
+## Full example
+
+[`sdk/python/examples/langchain_quickstart.py`](https://github.com/getrubric/platform/blob/main/sdk/python/examples/langchain_quickstart.py) shows a ReAct agent with two governed tools and a published deny policy.

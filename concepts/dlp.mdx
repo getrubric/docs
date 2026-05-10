@@ -1,0 +1,119 @@
+---
+title: "DLP"
+description: "Inline detection of secrets, PII, and PHI in tool arguments."
+icon: "eye"
+---
+
+DLP (Data Loss Prevention) runs **before** policy evaluation. It scans the tool call's arguments for secrets, PII, or PHI and surfaces detections as first-class policy fields. Policies can then say *"deny if dlp_severity is high"* — a one-liner that catches an entire class of issues no rule-by-rule list could anticipate.
+
+## Modes
+
+Enable via the `dlp=` kwarg on `Governance.bootstrap()` or the `AG_DLP` env var.
+
+| Mode | Cost | Catches |
+| --- | --- | --- |
+| `off` (default) | 0 | Nothing. |
+| `regex` | ~50µs/call | Email, phone, SSN, credit card, IP, AWS keys, GitHub tokens, JWT, Slack tokens, generic high-entropy secrets. |
+| `presidio` | ~1ms/call | Everything in `regex` plus NER-backed PII (names, locations, organizations, medical) via Microsoft Presidio. |
+| `auto` | as available | Presidio if installed (`agent-governance[presidio]`), otherwise regex. |
+
+```python
+from agent_governance import Governance
+
+with Governance.bootstrap(agent_name="payments-bot", dlp="auto") as gov:
+    ...
+```
+
+```bash
+AG_DLP=auto python my_agent.py
+```
+
+## What gets scanned
+
+The `input`, `args`, and `kwargs` fields on the `EvaluationMetadata` you pass to `evaluate()`. Strings nested arbitrarily deep are walked. Non-string values are ignored.
+
+If none of those fields are populated, the scan is skipped (no false positives on empty input).
+
+## Detected types
+
+The detector returns:
+
+```python
+DlpDetection(
+    detected=True,
+    severity="high",          # low | medium | high
+    types=["EMAIL", "SSN"],   # which patterns fired
+    matches=[...],            # list of the actual matches (for the trace)
+)
+```
+
+These flow into the audit event's `metadata.dlp` and into the policy evaluator's request as:
+
+```yaml
+- field: dlp_detected
+  operator: eq
+  value: true
+- field: dlp_severity
+  operator: eq
+  value: high
+- field: dlp_types
+  operator: contains
+  value: SSN
+```
+
+## Severity tiers
+
+The default tier mapping (override per-detector if needed):
+
+| Tier | Patterns |
+| --- | --- |
+| `low` | Email, phone, IP. |
+| `medium` | Generic API keys, GitHub tokens, JWT, Slack tokens. |
+| `high` | SSN, credit card, AWS access keys, medical record numbers, anything Presidio classifies as PHI. |
+
+## Example policy
+
+```yaml
+apiVersion: agent-governance.io/v1
+kind: Policy
+metadata:
+  name: dlp-block-high
+  description: Block any tool call carrying high-severity PII or secrets.
+spec:
+  defaultEffect: allow
+  rules:
+    - id: high-severity-deny
+      effect: deny
+      conditions:
+        - field: dlp_severity
+          operator: eq
+          value: high
+```
+
+That's the whole policy. Drop it in, publish, and any `evaluate()` whose arguments contain an SSN or AWS key returns `deny` with `denyCode: high-severity-deny`.
+
+## Custom detector
+
+Pass any object with a `detect(payload: dict) -> DlpDetection | None` method:
+
+```python
+from agent_governance.dlp import DlpDetection
+from agent_governance import Governance
+
+class MyDetector:
+    def detect(self, payload):
+        if "secret_token" in str(payload):
+            return DlpDetection(
+                detected=True, severity="high", types=["MY_SECRET"], matches=[]
+            )
+        return None
+
+with Governance.bootstrap(agent_name="payments-bot", dlp=MyDetector()) as gov:
+    ...
+```
+
+Useful for company-specific patterns (internal IDs, customer secret formats, proprietary tokens) the built-in detectors don't know about.
+
+## Failures fail-soft
+
+If the detector raises, the SDK logs and treats the call as `dlp_detected: false`. Your agent doesn't break because a regex compiled wrong. Fix the detector and you're back in business.

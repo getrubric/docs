@@ -1,0 +1,110 @@
+---
+title: "DLP"
+description: "Detector configuration and the detection result shape."
+icon: "eye"
+---
+
+The SDK ships with a regex-based DLP detector and an optional Presidio-backed one (via the `[presidio]` extra). DLP runs **before** policy evaluation so detections become first-class policy fields.
+
+See [DLP concepts](/concepts/dlp) for the philosophy and policy patterns. This page is the API.
+
+## Enable
+
+Three knobs — pick one:
+
+```python
+from agent_governance import Governance
+
+# 1. Constructor kwarg
+with Governance.bootstrap(agent_name="…", dlp="auto") as gov:
+    ...
+
+# 2. Constructor with a concrete detector
+from agent_governance.dlp import RegexDetector
+with Governance.bootstrap(agent_name="…", dlp=RegexDetector()) as gov:
+    ...
+
+# 3. Env var
+# AG_DLP=auto python my_agent.py
+```
+
+## Modes
+
+```python
+from agent_governance.constants import (
+    DLP_MODE_OFF,
+    DLP_MODE_REGEX,
+    DLP_MODE_PRESIDIO,
+    DLP_MODE_AUTO,
+)
+```
+
+| Constant | Value | Behavior |
+| --- | --- | --- |
+| `DLP_MODE_OFF` | `"off"` | Detector disabled. |
+| `DLP_MODE_REGEX` | `"regex"` | Built-in regex patterns only. |
+| `DLP_MODE_PRESIDIO` | `"presidio"` | Presidio NER + regex (requires `[presidio]` extra). |
+| `DLP_MODE_AUTO` | `"auto"` | Presidio if available, otherwise regex. |
+
+## DlpDetection
+
+```python
+class DlpDetection(BaseModel):
+    detected: bool
+    severity: Literal["low", "medium", "high"]
+    types: list[str]
+    matches: list[DlpMatch]
+```
+
+| Field | Notes |
+| --- | --- |
+| `detected` | `True` if any pattern fired. `False` only if the detector ran and found nothing. |
+| `severity` | The highest severity tier of any match. |
+| `types` | Sorted list of matched type names (`EMAIL`, `SSN`, `AWS_KEY`, …). |
+| `matches` | Detailed match records — value (sometimes redacted), location, type, severity. |
+
+## DlpMatch
+
+```python
+class DlpMatch(BaseModel):
+    type: str
+    value: str          # redacted to first/last 2 chars when severity is high
+    severity: Literal["low", "medium", "high"]
+    location: str       # JSON path in the scanned payload
+```
+
+## Custom detector
+
+Any object with this shape:
+
+```python
+class MyDetector:
+    def detect(self, payload: dict[str, Any]) -> DlpDetection | None:
+        ...  # return None for no detection, DlpDetection for a hit
+```
+
+Pass via `dlp=MyDetector()` on bootstrap. The SDK calls `.detect()` once per `evaluate()`, passing the combined `metadata` dict (input + args + kwargs).
+
+## Built-in regex patterns
+
+The default regex detector covers:
+
+| Type | Severity |
+| --- | --- |
+| `EMAIL` | low |
+| `PHONE` | low |
+| `IP_ADDRESS` | low |
+| `JWT` | medium |
+| `GITHUB_TOKEN` | medium |
+| `SLACK_TOKEN` | medium |
+| `GENERIC_API_KEY` | medium |
+| `SSN` | high |
+| `CREDIT_CARD` | high |
+| `AWS_ACCESS_KEY` | high |
+| `MEDICAL_RECORD_NUMBER` | high |
+
+Override per-detector by subclassing and changing the `_PATTERNS` map.
+
+## Failures
+
+If a detector raises during `detect()`, the SDK logs and treats it as no-detection. Your `evaluate()` proceeds with `dlp_detected: false`. Fix the detector and you're back. Detector exceptions never propagate up to the caller.

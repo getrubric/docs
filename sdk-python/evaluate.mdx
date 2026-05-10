@@ -1,0 +1,127 @@
+---
+title: "evaluate()"
+description: "The hot-path function. Evaluate a tool call against the bundle and ship an audit event."
+icon: "bolt"
+---
+
+```python
+def evaluate(
+    self,
+    tool_name: str,
+    *,
+    session_id: str,
+    agent_id: str | None = None,
+    metadata: EvaluationMetadata | None = None,
+    framework: str | None = None,
+    trace: TraceContext | None = None,
+) -> EvaluationResult:
+```
+
+## Parameters
+
+| Param | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `tool_name` | `str` | yes | Match against `tool_name` in your policies. |
+| `session_id` | `str` | yes | Groups events in the audit log. Pick a granularity (per-conversation is common). |
+| `agent_id` | `str \| None` | no | Locked to the JWT's `sub`. Mismatched values are silently ignored. |
+| `metadata` | `EvaluationMetadata \| None` | no | Tool input + framework-specific extras. See below. |
+| `framework` | `str \| None` | no | Tag for the audit event. Adapters set this. |
+| `trace` | `TraceContext \| None` | no | If set, uploaded and attached to the audit event. |
+
+## EvaluationMetadata
+
+```python
+class EvaluationMetadata(BaseModel):
+    input: dict[str, Any] | None = None
+    args: list[Any] | None = None
+    kwargs: dict[str, Any] | None = None
+    tool_use_id: str | None = None
+```
+
+Pick the field that matches how the call's arguments are structured:
+
+- **MCP, Claude Agent**: `input={...}` — the dict the tool was invoked with.
+- **LangChain**: `args=[...]`, `kwargs={...}` — positional and keyword.
+- **Raw SDK**: whatever shape your tools take.
+
+These flow into the policy evaluator's request as `input.<key>`, `args.<index>`, `kwargs.<key>` respectively.
+
+## Returns: EvaluationResult
+
+```python
+class EvaluationResult(BaseModel):
+    decision: Literal["allow", "deny"]
+    reason: str | None
+    code: str | None
+    matchedPolicyId: str | None
+    matchedPolicyVersion: int | None
+    matchedRuleId: str | None
+    latencyMs: float
+```
+
+For `decision == "allow"` with no policy matching, all the `matched*` fields are `None`. For `deny`, the matched rule's `id` becomes `code` and its `description` becomes `reason`.
+
+## Examples
+
+### Plain
+
+```python
+result = gov.evaluate("delete_file", session_id="s1")
+if result.decision == "deny":
+    raise PermissionError(result.reason)
+```
+
+### With input
+
+```python
+from agent_governance import EvaluationMetadata
+
+result = gov.evaluate(
+    "shell.exec",
+    session_id="s1",
+    metadata=EvaluationMetadata(input={"command": "rm -rf /tmp"}),
+)
+```
+
+The policy can match on `input.command`:
+
+```yaml
+- field: input.command
+  operator: contains
+  value: "rm -rf"
+```
+
+### With trace
+
+```python
+from agent_governance import TraceContext, UserMessage
+
+trace = TraceContext()
+trace.append(UserMessage(content="Delete the staging logs"))
+
+result = gov.evaluate(
+    "delete_file",
+    session_id="s1",
+    metadata=EvaluationMetadata(input={"path": "/var/log/old.log"}),
+    trace=trace,
+)
+```
+
+The trace is uploaded to `/v1/traces` and the returned `traceId` is attached to the audit event. See [Traces](/concepts/traces).
+
+## Performance
+
+Synchronous portion (returns to caller):
+
+- Pure-Python evaluator: ~50–200µs.
+- Native (Rust) evaluator: ~5–20µs (`pip install agent-governance[runtime]`).
+- DLP scan: ~50µs (regex), ~1ms (Presidio).
+- Trace upload (if attached): 2–5ms.
+
+Asynchronous (does not block the caller):
+
+- Audit event flush: batched, runs every 1s or every 100 events.
+
+## Error handling
+
+`evaluate()` does not raise. If anything goes wrong internally, you get an `EvaluationResult(decision="allow", ...)` and the error is logged. This is deliberate — a misconfigured Rubric should never block your agent. To enforce default-deny, set `spec.defaultEffect: deny` in your policy.

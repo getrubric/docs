@@ -1,133 +1,71 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Rubric — runtime governance for AI agents"
+description: "Per-agent identities, runtime policy enforcement, and an audit trail for every tool call your agents make."
+sidebarTitle: "Introduction"
+icon: "shield-check"
 ---
 
-## Setting up
+Rubric is a control plane for the agents you ship. It gives every agent a cryptographic identity, evaluates every tool call against your policy bundle, and writes a tamper-evident audit log — without ever leaving your stack.
 
-Get your documentation site up and running in minutes.
+The SDK is a thin Python library. The control plane is a self-hostable API + dashboard. The wire protocol is documented and stable.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="5-minute quickstart" icon="rocket" href="/guides/quickstart">
+    Install the SDK, enroll your first agent, and watch a denied call land in the dashboard.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="How Rubric works" icon="diagram-project" href="/concepts/architecture">
+    Control plane, SDK, bundle pulls, audit ingest — the moving parts.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Write a policy" icon="file-shield" href="/concepts/policies">
+    YAML in the dashboard, versioned and dry-runnable. Conditions, effects, scope.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="REST API reference" icon="terminal" href="/api-reference/introduction">
+    Every endpoint, every header, every error code.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you get
 
-Everything you need to create world-class documentation.
+<Steps>
+  <Step title="Per-agent JWT-SVID identity">
+    Every agent gets its own short-lived (60-min) signed token, issued on enrollment and auto-refreshed by the SDK. The agent's identity is bound cryptographically — events ship with attribution that can't be spoofed.
+  </Step>
+  <Step title="Runtime policy enforcement">
+    Policies are YAML, versioned, published as bundles, and pulled by the SDK every 30 seconds. Evaluation happens **in-process** — sub-millisecond, no network round-trip per tool call.
+  </Step>
+  <Step title="Full audit trail with optional traces">
+    Every `evaluate()` call writes an audit event. Attach a `TraceContext` and the SDK uploads the full conversation transcript so you can click into any decision and see exactly what the model was thinking.
+  </Step>
+  <Step title="DLP pre-flight">
+    Optional inline DLP scan over tool arguments — regex or Presidio-backed. Detected types become first-class policy fields (`dlp_severity eq high → deny`).
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Three lines of code
 
-## Make your content agent ready
+```python
+from agent_governance import Governance
 
-Make your docs work for humans and AI agents alike.
+with Governance.bootstrap(agent_name="payments-bot") as gov:
+    result = gov.evaluate("delete_file", session_id="s1")
+    if result.decision == "deny":
+        raise PermissionError(result.reason)
+```
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+That's the whole integration. Set `AG_ENROLLMENT_TOKEN` once, drop those lines next to your tool dispatcher, and every call routes through your policy bundle.
 
-## Need inspiration?
+## Pick your adapter
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+If you're using a framework, the adapter wraps your tools so you don't write any glue code yourself:
+
+<CardGroup cols={3}>
+  <Card title="MCP" icon="plug" href="/adapters/mcp">
+    `govern_mcp_session(gov, session)` — works against any MCP-speaking server.
+  </Card>
+  <Card title="Claude Agent SDK" icon="anthropic" href="/adapters/claude-agent">
+    `governance_hook_matchers(gov)` — installs a `PreToolUse` hook.
+  </Card>
+  <Card title="LangChain" icon="link" href="/adapters/langchain">
+    `govern_tools(gov, tools, session_id)` — wraps any `BaseTool` list.
+  </Card>
+</CardGroup>

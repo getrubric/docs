@@ -1,0 +1,98 @@
+---
+title: "Errors"
+description: "Exception types raised by the SDK."
+icon: "circle-exclamation"
+---
+
+The SDK raises **only** at construction time and at framework boundaries. The hot path (`evaluate()`) never raises — see [Evaluation](/concepts/evaluation#when-evaluation-fails) for why.
+
+```python
+from agent_governance import (
+    GovernanceError,
+    GovernanceProblemError,
+    ProblemDetails,
+)
+from agent_governance.adapters.langchain import GovernanceDeniedError
+```
+
+## GovernanceError
+
+Base class. Catch this if you want to handle anything from the SDK.
+
+```python
+class GovernanceError(Exception):
+    """Base class for all SDK exceptions."""
+```
+
+## GovernanceProblemError
+
+Raised when the control plane returns an RFC 9457 problem response (e.g., `401 invalid_identity`, `403 forbidden`, `429`). Carries the parsed problem details.
+
+```python
+class GovernanceProblemError(GovernanceError):
+    problem: ProblemDetails
+    status: int
+```
+
+```python
+class ProblemDetails(BaseModel):
+    type: str          # URI identifier for the problem class
+    title: str         # Short summary
+    status: int        # HTTP status
+    detail: str | None # Human-readable description
+    instance: str | None
+    # Plus typed extensions per problem type (retryAfter, etc.)
+```
+
+### Typical sources
+
+| When | Likely problem |
+| --- | --- |
+| `Governance.bootstrap()` with a bad token | `invalid_identity` (401) |
+| Re-enrollment of a revoked identity | `forbidden` (403) |
+| Enrollment rate-limit exceeded | `enrollment_rate_limited` (429) |
+| Token refresh after revocation | `invalid_identity` (401) |
+
+### Example
+
+```python
+from agent_governance import Governance, GovernanceProblemError
+
+try:
+    gov = Governance.bootstrap(agent_name="payments-bot")
+except GovernanceProblemError as e:
+    if e.status == 403:
+        # Identity was revoked. Operator action needed.
+        log.error("identity revoked: %s", e.problem.detail)
+    elif e.status == 429:
+        retry_after = e.problem.dict().get("retryAfter")
+        log.warning("rate-limited; retry after %ds", retry_after)
+    else:
+        raise
+```
+
+## GovernanceDeniedError (LangChain only)
+
+Raised by the [LangChain adapter](/adapters/langchain) when a tool call is denied. Subclass of `PermissionError`.
+
+```python
+class GovernanceDeniedError(PermissionError):
+    """Raised when a tool call is denied by an active policy."""
+```
+
+LangChain's agent loop catches this and surfaces it as a tool failure to the model. You only catch it yourself if you want to handle denials specially.
+
+The MCP and Claude Agent adapters do **not** raise on deny — they return native tool-result shapes (`isError=True` / `permissionDecision: "deny"`).
+
+## What does NOT raise
+
+These are deliberately silent:
+
+- **Evaluator failures.** `evaluate()` returns default-allow; error is logged.
+- **DLP detector failures.** Treated as no-detection; error is logged.
+- **Audit event flush failures.** Events are retried; errors are logged.
+- **Trace upload failures.** Audit event still ships without `traceId`; error is logged.
+- **Bundle pull failures.** SDK keeps using last-known-good bundle; error is logged.
+- **JWT refresh failures (transient).** Retried with exponential backoff. Only after the JWT actually expires does the SDK surface a problem.
+
+This is by design. A flaky network or a misconfigured Rubric should not stop your agent from doing its job.

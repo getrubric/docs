@@ -1,0 +1,48 @@
+---
+title: "Audit log"
+description: "Every governed tool call, filterable, with traces."
+icon: "shield"
+---
+
+The Audit log is the canonical record of every `evaluate()` call your fleet has made. It's where you go when you need to answer *"did agent X ever do Y?"* with cryptographic certainty.
+
+## The list
+
+Columns:
+
+- **Time** — when the call happened (your local timezone).
+- **Agent** — the agent's stable id (bound to the JWT `sub`).
+- **Tool** — the tool name passed to `evaluate()`.
+- **Decision** — `allow` (green pill) or the deny code (red pill).
+- **Latency** — how long the in-process evaluator took. Red on deny.
+- **Session** — first 8 chars of the session id (hover to see full).
+- **📄** — orange file icon if a trace is attached.
+
+## Filters
+
+- **Decision tabs** — `All`, `Allow`, `Deny`. Click to filter.
+- **Search** — case-insensitive substring match across `toolName`, `sessionId`, and `agentId`. Press Enter or blur to apply. Click `clear` to reset.
+
+## Pagination
+
+Cursor-based on `(timestamp desc, id desc)` so concurrent ingest doesn't skip rows. Click **Load more** for the next page. The current page size is 50.
+
+## Click a row → trace drawer
+
+Click any row to open the trace drawer on the right. You'll see:
+
+- **The full transcript** — user messages, assistant replies, tool calls and results, in order.
+- **The current call highlighted** — the message that this audit row was emitted for is marked.
+- **DLP highlights inline** — secret/PII matches are flagged in the message body.
+
+If the row has no trace (the icon column is empty), the drawer shows a friendly empty state explaining how to attach traces by passing a `TraceContext` to `evaluate()`.
+
+## Performance
+
+The audit log is indexed on `(orgId, ts desc)`, `(orgId, toolName, ts desc)`, and `(orgId, decision, ts desc)`. Queries through these indexes return in single-digit milliseconds even with millions of rows.
+
+If you need a different filter combination — e.g., by `sessionId` or by `policyId` — file an issue and we'll add an index.
+
+## Export
+
+The export button (top-right) is a placeholder in the current build. To export programmatically, hit the [`GET /v1/audit`](/api-reference/audit) endpoint with your filters and paginate via cursors.

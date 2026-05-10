@@ -1,0 +1,106 @@
+---
+title: "Claude Agent adapter"
+description: "Install a `PreToolUse` hook so Claude Agent's tool calls run through governance."
+icon: "anthropic"
+---
+
+The Claude Agent adapter installs a `PreToolUse` hook on a `ClaudeAgentOptions` config. Every tool call the agent attempts is evaluated against your bundle and recorded in the audit log. Denied calls become a `deny` permission decision — the model sees it and adapts, no harness changes required.
+
+## Install
+
+```bash
+pip install 'agent-governance[claude-agent]'
+```
+
+Pulls the `claude-agent-sdk` package as a peer dep. Compatible with claude-agent-sdk 0.2.x and later.
+
+## Basic usage
+
+```python
+from agent_governance import Governance
+from agent_governance.adapters.claude_agent import governance_hook_matchers
+from claude_agent_sdk import ClaudeAgentOptions, query
+
+with Governance.bootstrap(agent_name="research-bot") as gov:
+    options = ClaudeAgentOptions(
+        hooks=governance_hook_matchers(gov, session_id="user-12345"),
+        mcp_servers={
+            # Your MCP servers here. Tool calls through them are governed.
+        },
+    )
+
+    async for chunk in query(prompt="Look up recent news", options=options):
+        print(chunk)
+```
+
+`governance_hook_matchers(gov, session_id)` returns a `dict` matching the structure Claude Agent expects under `options.hooks` — one matcher that fires on every tool call.
+
+## Tool name extraction
+
+Claude Agent sees MCP tool names as `mcp__<server>__<tool>` (e.g. `mcp__quickstart-tools__delete_file`). By default the adapter strips the `mcp__<server>__` prefix so your policies can reference plain tool names:
+
+```yaml
+- field: tool_name
+  operator: eq
+  value: delete_file   # not mcp__quickstart-tools__delete_file
+```
+
+If you want to keep the full prefixed name (so policies can target a specific MCP server), pass a custom extractor:
+
+```python
+from agent_governance.adapters.claude_agent import governance_hook_matchers
+
+def keep_full_name(raw: str) -> str:
+    return raw
+
+options = ClaudeAgentOptions(
+    hooks=governance_hook_matchers(gov, session_id="…", tool_name_extractor=keep_full_name),
+)
+```
+
+## Denied calls
+
+The hook returns the standard Claude Agent permission-decision shape:
+
+```json
+{
+  "hookEventName": "PreToolUse",
+  "hookSpecificOutput": {
+    "permissionDecision": "deny",
+    "permissionReason": "Deny delete_file calls"
+  }
+}
+```
+
+Claude Agent's tool dispatcher sees this and produces a tool result that says *"the user denied this action because: Deny delete_file calls"*. The model reads it, decides whether to ask the user for clarification, try an alternative, or stop.
+
+No exceptions are raised. Your harness is unaware governance even ran.
+
+## With traces
+
+The adapter automatically threads the agent's hook payloads (tool name, tool input, tool_use_id) into a `TraceContext` and uploads it. To disable trace upload, pass `trace=False`:
+
+```python
+options = ClaudeAgentOptions(
+    hooks=governance_hook_matchers(gov, session_id="…", trace=False),
+)
+```
+
+The default is `True` because the dashboard's trace drawer is the single highest-leverage feature for triaging Claude Agent runs.
+
+## Multi-session
+
+Claude Agent runs each `query()` as one session. If your application maintains multiple long-running conversations, build the hook once per conversation with that conversation's id:
+
+```python
+def make_options_for_user(user_id: str) -> ClaudeAgentOptions:
+    return ClaudeAgentOptions(
+        hooks=governance_hook_matchers(gov, session_id=f"user-{user_id}"),
+    )
+```
+
+Audit events and traces will group cleanly under each `user-<id>` session in the dashboard.
+
+## Full example
+
+[`sdk/python/examples/claude_agent_quickstart.py`](https://github.com/getrubric/platform/blob/main/sdk/python/examples/claude_agent_quickstart.py) runs Claude Agent against an in-tree MCP server with governance installed end-to-end.

@@ -1,0 +1,83 @@
+---
+title: "Policies"
+description: "Author, version, dry-run, publish."
+icon: "file-shield"
+---
+
+The Policies page lists every policy in your org as a card. Each card shows the policy name, slug, applied tags, an "Active" or "Draft" status pill, and a 24h activity sparkline.
+
+## Authoring
+
+Click **New policy** to open the YAML editor. The editor:
+
+- Validates against the [Policy schema](/concepts/policies) on every keystroke. Errors are highlighted inline.
+- Autocompletes condition fields, operators, and values for known tools.
+- Shows a live diff against the currently-published version on the right.
+
+When you click **Save**, a new `policy_version` is created with status `draft`.
+
+## Templates
+
+Click **Browse templates** for a starter library — common patterns like:
+
+- Block destructive filesystem operations
+- Block all network egress except an allowlist
+- Block calls carrying high-severity DLP detections
+- Limit tool calls per session
+- Production-only deny rules
+
+Pick one, customize, dry-run, publish.
+
+## Dry-run
+
+Before publishing, click **Dry-run** in the editor. The control plane replays the last N (default 1000) audit events through the candidate policy and shows you:
+
+- **Decisions** — how many events would have been allowed vs denied.
+- **Most affected agents** — which agents are most often denied by this rule.
+- **Diff vs live** — for an existing policy, which audit events change decision compared to the current version.
+- **Filters** — narrow the replay to a specific agent or environment.
+
+Always dry-run a deny rule before shipping it. The audit replay catches over-broad matchers cheaply.
+
+## Publishing
+
+Click **Publish** to make a draft version active. Effects:
+
+1. The previous active version becomes `archived`.
+2. The new version becomes `active`.
+3. The bundle version increments.
+4. SDKs see the new bundle on their next 30-second poll.
+
+You can roll back by editing the policy and choosing **Publish previous version** from the version list.
+
+## Pushing from CI
+
+Policies can be pushed via the API too — a typical pattern is to keep YAML files in your application repo and apply them on merge:
+
+```bash
+curl -X POST $RUBRIC_API/v1/policies \
+  -H "Authorization: Bearer $CLERK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @policies/deny-destructive-fs.json
+```
+
+See the [Policies API endpoint](/api-reference/introduction) for the full schema. The dashboard's editor and the API write to the same `policy_versions` table — you can author in either and both see each other's history.
+
+## Scope (which agents see which policies)
+
+Policies are global to the org by default. To scope to a subset, add a condition matching agent metadata:
+
+```yaml
+- field: agent_environment
+  operator: eq
+  value: prod
+```
+
+The dashboard's policy card shows which **applied tags** matched the policy in the last 30 days, so you can see at a glance which agents this policy is actually affecting.
+
+## Status pill
+
+Each policy card has a pill in the bottom-right:
+
+- **Active** (green) — the policy has a published version and is in the bundle.
+- **Draft** (muted) — only draft versions exist; not in the bundle.

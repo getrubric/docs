@@ -1,0 +1,68 @@
+---
+title: "Agents"
+description: "Manage the fleet — view, register, freeze, assign owners."
+icon: "robot"
+---
+
+The Agents page is your fleet view. Every agent that has ever shipped an audit event appears here, sorted by risk score (highest first).
+
+## The list
+
+Columns:
+
+- **#** — risk rank (01 = highest risk).
+- **Agent** — name and stable id (the value bound to the JWT's `sub` claim).
+- **Framework** — `mcp`, `claude-agent`, `langchain`, or `python` (raw SDK).
+- **Env** — `dev`, `stage`, `prod`, or `unknown`. Set from the agent's metadata.
+- **Owner** — `owned` or `unowned`. Assign in the agent detail page.
+- **Risk** — score 0–100 with a colored bar. See [Risk scoring](#risk-scoring) below.
+- **24h activity** — sparkline of allow + deny per hour for the last 24 hours.
+- **Last seen** — relative time of the most recent audit event.
+
+Click any row to open the agent's detail page.
+
+## Agent detail
+
+Tabs and sections:
+
+- **Identities** — every JWT-SVID issued for this agent, with status (active/revoked) and provenance (`enrolled · <token>` or `manual`). Issue or revoke from here.
+- **Activity** — full timeseries chart for the agent. Allow vs deny.
+- **Top tools** — which tools this agent calls most.
+- **Recent events** — table of recent audit events. Click a row for the trace drawer.
+- **Edit panel** — change the agent's name, environment, or status (active / frozen). Freezing rejects the next refresh, effectively blocking the agent within ~60 minutes.
+
+## Registering agents
+
+Agents are usually registered automatically — the SDK calls `/v1/identities/enroll` (or `/exchange`) on bootstrap and the control plane creates the agent row idempotently. **You rarely need to register agents manually.**
+
+If you want to pre-create rows (e.g., to reserve a name or assign an owner before the SDK boots), click **Register agent** in the top-right of the Agents page.
+
+## Risk scoring
+
+Risk is a 0–100 score updated on every audit event. The factors:
+
+- **Deny rate.** Recent denies push risk up.
+- **DLP severity.** A `high`-severity DLP detection in the last hour spikes risk.
+- **Tool sensitivity.** Calls to known sensitive tools (`shell.exec`, `db.write`, `email.send`) carry more weight than read-only tools.
+- **Recency.** Events from the last hour weigh more than events from yesterday.
+
+Bands:
+
+| Score | Band | Color |
+| --- | --- | --- |
+| 80–100 | **Critical** | Red |
+| 55–79 | **High** | Amber |
+| 30–54 | **Medium** | Yellow |
+| 0–29 | **Low** | Green |
+
+Risk decays over time. An agent that goes quiet for a few hours drops back toward 0.
+
+## Freezing an agent
+
+Click **Edit** on an agent's detail page → set **Status** to `frozen`. Effects:
+
+1. The agent's identity is marked frozen; the next refresh attempt is rejected.
+2. The current JWT remains valid until expiry (≤ 60 min).
+3. New audit events from this agent are still logged but the dashboard shows them with a "frozen" tag.
+
+To **immediately** stop an agent, revoke its identity (Identities → Revoke). The current JWT is still cryptographically valid until expiry, but you can pair revocation with a kill-switch in your harness if you need stronger guarantees.

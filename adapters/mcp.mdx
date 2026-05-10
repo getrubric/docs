@@ -1,0 +1,92 @@
+---
+title: "MCP adapter"
+description: "Govern any MCP-speaking agent with one wrapper call."
+icon: "plug"
+---
+
+The MCP adapter wraps an `mcp.ClientSession` so every `call_tool()` is gated by the governance evaluator and produces an audit event. Denied calls come back as a normal `CallToolResult(isError=True)` — your harness doesn't need any special-casing.
+
+## Install
+
+```bash
+pip install 'agent-governance[mcp]'
+```
+
+The `[mcp]` extra pulls `mcp` as a dependency. If you already have it installed, `pip install agent-governance` is enough.
+
+## Basic usage
+
+```python
+from agent_governance import Governance
+from agent_governance.adapters.mcp import govern_mcp_session
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+server = StdioServerParameters(command="python", args=["my_mcp_server.py"])
+
+with Governance.bootstrap(agent_name="ops-bot") as gov:
+    async with stdio_client(server) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            wrapped = govern_mcp_session(gov, session, session_id="ops-session")
+
+            # Same MCP API — just call methods on `wrapped` instead of `session`.
+            tools = await wrapped.list_tools()
+            result = await wrapped.call_tool("list_files", {"path": "/tmp"})
+
+            if result.isError:
+                # The model sees this and adapts.
+                print(result.content[0].text)
+```
+
+The wrapper exposes the same methods as `ClientSession` — `list_tools`, `call_tool`, etc. — so it's a drop-in replacement.
+
+## What gets evaluated
+
+Every `wrapped.call_tool(name, args)` triggers `gov.evaluate(name, session_id=…, metadata=EvaluationMetadata(input=args))`. The `tool_name` field in your policies matches the MCP tool name as the server advertised it.
+
+- **`tool_name`** = the MCP tool name (e.g. `list_files`, `delete_file`).
+- **`input.<key>`** = entries in the `args` dict (e.g. `input.path`).
+- **`framework`** = `"mcp"` on the audit event.
+
+## Denied calls
+
+When a policy denies the call:
+
+1. `evaluate()` returns `decision="deny"` with the rule's reason.
+2. The adapter constructs a `CallToolResult(isError=True, content=[TextContent(...)])` containing the deny reason.
+3. The actual MCP server is **never called**.
+4. The audit event ships with `decision="deny"` and the policy id.
+
+The model sees the error message in the tool result and reacts — usually by trying a different approach or asking the user. No special harness logic required.
+
+## With traces
+
+Pass a `TraceContext` and it's used for every governed call in this session:
+
+```python
+from agent_governance import TraceContext, UserMessage
+
+trace = TraceContext()
+trace.append(UserMessage(content="Clean up old logs"))
+
+wrapped = govern_mcp_session(gov, session, session_id="ops-session", trace=trace)
+
+await wrapped.call_tool("list_files", {"path": "/var/log"})
+await wrapped.call_tool("delete_file", {"path": "/var/log/old.log"})
+# Both calls are recorded in `trace`, including the assistant's tool_use
+# messages and the tool_result responses.
+```
+
+## Custom session id strategy
+
+`session_id` is whatever string makes sense for your harness. Two common choices:
+
+- **Per-conversation.** Use the user's chat thread id — every audit event for that conversation groups under one id.
+- **Per-process.** Use `os.getpid()` or a uuid generated at startup — useful for batch jobs.
+
+The audit log groups by session id, so picking the right granularity makes triaging much faster.
+
+## Full example
+
+A working end-to-end script lives at [`sdk/python/examples/mcp_quickstart.py`](https://github.com/getrubric/platform/blob/main/sdk/python/examples/mcp_quickstart.py) in the platform repo. It spawns an in-tree FastMCP server, governs the client, and runs an `allow` and a `deny` call against the bundle.

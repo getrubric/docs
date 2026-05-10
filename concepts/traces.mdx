@@ -1,0 +1,84 @@
+---
+title: "Traces"
+description: "Attach the conversation transcript to every audit event."
+icon: "route"
+---
+
+A **trace** is the running conversation transcript — user messages, assistant replies, tool calls, tool results — that led up to the tool call you just evaluated. Attaching it to `evaluate()` means every audit row in the dashboard has a one-click drawer showing exactly what the model was thinking when it asked to do something.
+
+This is what turns "we denied a deletion at 14:32" from a line in a log into a *meaningful* incident review.
+
+## TraceContext
+
+The SDK ships a `TraceContext` you build up alongside your model loop:
+
+```python
+from agent_governance import (
+    AssistantMessage,
+    ToolResultMessage,
+    TraceContext,
+    UserMessage,
+)
+
+trace = TraceContext()
+trace.append(UserMessage(content="Delete the staging logs in /var/log."))
+
+# ...your model produces a tool call...
+trace.append(AssistantMessage(content="On it — running delete_file."))
+
+result = gov.evaluate(
+    "delete_file",
+    session_id="sess-42",
+    metadata=EvaluationMetadata(input={"path": "/var/log/old.log"}),
+    trace=trace,
+)
+
+# evaluate() already appended a ToolCallMessage. Add the result yourself:
+if result.decision == "allow":
+    trace.append(ToolResultMessage(content="Deleted.", isError=False))
+else:
+    trace.append(ToolResultMessage(content=f"Denied: {result.reason}", isError=True))
+```
+
+The SDK appends a `ToolCallMessage` automatically when you pass `trace=trace` — you only need to handle user/assistant turns and the result.
+
+## What you'll see in the dashboard
+
+Every audit row with a trace shows a small file icon. Click anywhere on the row and a drawer slides in with:
+
+- **The full transcript** — user messages, assistant replies, tool calls and results, in order.
+- **The tool call highlighted** — the message that this audit row was emitted for.
+- **DLP highlights inline** — secret/PII matches are visually flagged in the message body.
+
+If the trace was never attached (or the trace blob is missing), the drawer shows a friendly empty state explaining how to wire one up.
+
+## When to attach traces
+
+Always, in production agents. The cost is small and the operational value is large:
+
+- **Cost.** One extra `POST /v1/traces` per `evaluate()` (2–5ms in parallel with the audit batch). Storage: a few KB per call, kept for 30 days.
+- **Value.** When a deny happens at 3 AM, you want to know *why the model wanted to do it*. The trace is your only evidence.
+
+You can omit `trace=` for low-stakes paths (synthetic load tests, throwaway batch jobs).
+
+## Roll-your-own message types
+
+`TraceContext` accepts any object with a `model_dump()` returning `{ "role": ..., "content": ... }`-shaped data. The four built-in types cover the common case:
+
+| Type | Role | Content |
+| --- | --- | --- |
+| `UserMessage(content="…")` | `user` | string |
+| `AssistantMessage(content="…")` | `assistant` | string |
+| `ToolCallMessage(toolName, args, toolUseId?)` | `tool_use` | structured |
+| `ToolResultMessage(content, isError, toolUseId?)` | `tool_result` | string + flag |
+
+If you're using the [Claude Agent adapter](/adapters/claude-agent), the adapter constructs these for you from the agent's hook payloads.
+
+## Privacy
+
+Traces include user messages — which may contain PII. Two protections:
+
+1. **Per-org isolation.** Trace blobs are stored with the org_id and only readable through the dashboard's clerk-authenticated endpoints. They are not served on the SDK-direction routes.
+2. **DLP redaction (opt-in).** When DLP is enabled, the trace upload endpoint redacts detected secrets/PII before persisting. The full unredacted trace never touches disk.
+
+For especially sensitive domains, you can disable trace upload entirely by never passing `trace=` to `evaluate()`. You'll keep the audit log; you'll lose the conversational context.

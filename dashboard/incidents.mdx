@@ -1,0 +1,61 @@
+---
+title: "Incidents"
+description: "Auto-opened on deny spikes and critical DLP. Triage in seconds."
+icon: "triangle-exclamation"
+---
+
+Rubric opens an **incident** automatically when something interesting happens. The Incidents page is a live triage queue — you don't search for problems, the control plane brings them to you.
+
+## What opens an incident
+
+Two triggers in the current build:
+
+| Trigger | When it fires | Severity |
+| --- | --- | --- |
+| **Deny spike** | An agent's deny count exceeds its rolling 1-hour baseline by N standard deviations. | `warning` (≥ 3σ) or `critical` (≥ 5σ). |
+| **Critical DLP** | A single tool call carries a `high`-severity DLP detection. | `critical`. |
+| **Manual** | An operator opens one explicitly. | Any. |
+
+When the trigger condition resolves (the rate drops, the call doesn't repeat), the incident auto-resolves after a stale window of 60 minutes.
+
+## Triage UI
+
+Two panes:
+
+- **Left: queue.** Tabs filter by status (`all`, `open`, `acknowledged`, `resolved`). Each row shows the incident title, agent, reason, deny count, sparkline of last hour, and time opened/last-event.
+- **Right: detail.** Severity, title, agent, reason, status, event count, deny rate over the last hour as an area chart. Action buttons: **Ack** (mark acknowledged) and **Freeze agent** (link to detail page).
+
+Click any row in the queue to load it on the right.
+
+## Live updates
+
+The page subscribes to a websocket. New denies, severity changes, and status transitions arrive in real time — you don't refresh.
+
+A red badge next to "Incidents" in the sidebar shows the count of currently-open incidents.
+
+## Incident detail page
+
+Click **View full incident →** in the detail pane to open the dedicated page. It shows:
+
+- Hero with severity, status, title, opened/last-event timestamps.
+- Stats: opened-at, last-event-at, event count, deny count.
+- **Remediation strip** — one-click actions: ack, resolve, freeze agent, jump to the agent detail.
+- **Events table** — every audit event attached to this incident, in time order. Click a row for the trace drawer.
+
+## Acknowledging vs resolving
+
+| Action | Effect |
+| --- | --- |
+| **Ack** | Sets status to `acknowledged`. Stops the red badge from incrementing. The incident is still considered "active" — new events still attach. |
+| **Resolve** | Sets status to `resolved`. New events on the same agent + reason will open a *new* incident rather than reopening this one. |
+| **Reopen** | Sets a `resolved` incident back to `open`. Use sparingly — usually a new incident is the cleaner trail. |
+
+## Freezing an agent from an incident
+
+The detail pane's **Freeze agent** button is the fastest way to stop an out-of-control agent. It:
+
+1. Sets the agent's status to `frozen`.
+2. Revokes the agent's current identity (so refresh is rejected next cycle).
+3. Logs an `incident_event` of kind `freeze` so the timeline shows what happened.
+
+The freeze is reversible — un-freeze on the agent's detail page.

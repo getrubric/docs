@@ -1,0 +1,45 @@
+---
+title: "Dashboard overview"
+description: "What each section of the Rubric dashboard is for."
+icon: "layout-dashboard"
+---
+
+The dashboard is at `http://localhost:3000` (local) or your deployed URL. Sign in with Clerk, switch into the org you want to operate on, and pick a tab from the left rail.
+
+| Section | What it's for |
+| --- | --- |
+| **[Dashboard](/dashboard/overview#dashboard)** | At-a-glance — fleet size, recent denies, top tools, agents at risk. |
+| **[Agents](/dashboard/agents)** | Every agent in the org, sorted by risk score. Click into one for activity, identities, and a 24h sparkline. |
+| **[Policies](/dashboard/policies)** | Author, version, dry-run, publish. Templates for common patterns. |
+| **[Insights](/dashboard/overview#insights)** | Decision timeline, top tools, top deny reasons, risk distribution — across your fleet for a chosen window. |
+| **[Incidents](/dashboard/incidents)** | Auto-opened on deny spikes and critical DLP. Triage queue with a live deny chart. |
+| **[Enrollment](/dashboard/enrollment)** | Manage enrollment tokens. Create, revoke, renew. |
+| **[Audit log](/dashboard/audit-log)** | Every governed tool call, filterable. Click a row for the trace. |
+| **[Settings](/dashboard/overview#settings)** | Account, workspace, API endpoint health. |
+
+## Dashboard
+
+Landing page when you sign in. Cards:
+
+- **Fleet snapshot** — number of agents, active in last hour, high-risk count.
+- **Recent decisions** — last 24h allow/deny rate as a sparkline.
+- **Top tools** — most-called tools, with deny percentage overlaid.
+- **Top deny reasons** — which deny codes are firing most.
+- **Top agents by risk score** — the riskiest agents to look at first.
+- **Live deny stream** (websocket) — denies appear in real time as they happen.
+
+## Insights
+
+Same data as the dashboard, but you can pick a window (1h, 24h, 7d, 30d) and the views are larger. Useful for retros and weekly reviews.
+
+## Settings
+
+Three tabs:
+
+- **Account** — Clerk's `<UserProfile>` embedded inline. Change name, email, password, MFA, sessions.
+- **Workspace** — Clerk's `<OrganizationProfile>` embedded inline. Rename the workspace, manage members, send invitations, set roles.
+- **About** — API endpoint health check, version, link to the GitHub repo.
+
+## Keyboard
+
+⌘K (or Ctrl+K) opens the command palette from anywhere. Search agents, policies, incidents, or pages by name. ↑/↓ to select, ↵ to open.

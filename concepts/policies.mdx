@@ -1,0 +1,118 @@
+---
+title: "Policies"
+description: "YAML in the dashboard, versioned, diffable, dry-runnable."
+icon: "file-shield"
+---
+
+A policy is a YAML document with rules that match a tool call and assign an effect (`allow` or `deny`). Policies are authored in the dashboard or pushed via the API, versioned on each save, and published as a signed bundle that the SDK pulls every 30 seconds.
+
+## Anatomy
+
+```yaml
+apiVersion: agent-governance.io/v1
+kind: Policy
+metadata:
+  name: deny-destructive-fs
+  description: Block any agent from removing files.
+  labels:
+    owner: platform
+spec:
+  defaultEffect: allow
+  rules:
+    - id: no-delete
+      description: Deny delete_file calls
+      effect: deny
+      conditions:
+        - field: tool_name
+          operator: eq
+          value: delete_file
+    - id: no-rm-shell
+      effect: deny
+      conditions:
+        - field: tool_name
+          operator: eq
+          value: shell.exec
+        - field: input.command
+          operator: contains
+          value: "rm -rf"
+```
+
+### Fields
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `apiVersion` | Yes | Always `agent-governance.io/v1`. |
+| `kind` | Yes | Always `Policy`. |
+| `metadata.name` | Yes | Human label. Doesn't have to be unique. |
+| `metadata.description` | No | Surfaces in the dashboard. |
+| `metadata.labels` | No | `Record<string, string>` for ownership tagging. |
+| `spec.defaultEffect` | Yes | `allow` or `deny`. Applied if no rule matches. |
+| `spec.rules` | Yes (≥1) | Evaluated top-to-bottom; first match wins. |
+
+### Rule conditions
+
+A rule matches when **every** condition in its list matches (logical AND). Condition shape:
+
+```yaml
+- field: <dotted.path.into.request>
+  operator: <eq | neq | in | nin | contains | starts_with | ends_with | gt | gte | lt | lte | regex>
+  value: <string | number | bool | string[] | number[]>
+```
+
+#### Common fields
+
+| Field | Type | Source |
+| --- | --- | --- |
+| `tool_name` | string | First positional arg to `evaluate()`. |
+| `agent_id` | string | Bound to the JWT's `sub` claim. |
+| `input.<key>` | any | From `metadata.input` passed to `evaluate()`. Supports nested paths. |
+| `args.<index>` | any | Positional args (LangChain adapter). |
+| `kwargs.<key>` | any | Keyword args (LangChain adapter). |
+| `dlp_detected` | bool | Set by the inline DLP scanner if enabled. |
+| `dlp_severity` | `low\|medium\|high` | Highest severity detected. |
+| `dlp_types` | string[] | Types that fired (`EMAIL`, `SSN`, `CREDIT_CARD`, …). |
+
+## Versioning
+
+Every save creates a new `policy_version`. Versions can be:
+
+- **draft** — saved but not published. Visible in the editor, not in the bundle.
+- **active** — currently published. There is at most one active version per policy.
+- **archived** — was active, has been replaced. Kept for audit.
+
+When you click **Publish** in the dashboard, the new version becomes active and the bundle version increments. SDKs pulling the bundle see the new policies on their next poll (~30s).
+
+## Dry-run
+
+Before publishing, click **Dry-run** in the editor. The control plane replays the last 1000 audit events through the candidate policy and shows you:
+
+- How many events would have been allowed vs denied.
+- Which agents are most affected.
+- A diff against the currently-published version.
+
+Always dry-run a deny rule before shipping it. The audit replay catches over-broad matchers cheaply.
+
+## Scope (matching agents to policies)
+
+Policies are global to the org by default. To scope to a subset of agents, add a condition matching agent metadata:
+
+```yaml
+rules:
+  - id: prod-only-deny
+    effect: deny
+    conditions:
+      - field: tool_name
+        operator: eq
+        value: delete_file
+      - field: agent_environment
+        operator: eq
+        value: prod
+```
+
+`agent_environment` is filled in by the control plane based on the agent's registered metadata.
+
+## Default-allow vs default-deny
+
+The default `spec.defaultEffect: allow` is the right starting point — it lets you ship an integration with zero policies and add denies incrementally.
+
+For high-trust environments, flip to `defaultEffect: deny` and add explicit allow rules. The SDK supports both; nothing in the framework prefers one model.

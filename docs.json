@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Rubric",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#FB923C",
+    "light": "#FDBA74",
+    "dark": "#EA580C"
   },
   "favicon": "/favicon.svg",
   "navigation": {
@@ -14,39 +14,56 @@
         "tab": "Guides",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get started",
             "pages": [
               "index",
-              "quickstart",
-              "development"
+              "guides/quickstart",
+              "guides/installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/identities",
+              "concepts/policies",
+              "concepts/evaluation",
+              "concepts/traces",
+              "concepts/dlp"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Framework adapters",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/components",
-              "essentials/reusable-snippets"
+              "adapters/mcp",
+              "adapters/claude-agent",
+              "adapters/langchain"
             ]
           },
           {
-            "group": "Agent ready",
+            "group": "Dashboard",
             "pages": [
-              "agent-ready/prompt",
-              "agent-ready/visibility",
-              "agent-ready/contextual",
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "dashboard/overview",
+              "dashboard/agents",
+              "dashboard/policies",
+              "dashboard/incidents",
+              "dashboard/audit-log",
+              "dashboard/enrollment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK reference",
+        "groups": [
+          {
+            "group": "Python",
+            "pages": [
+              "sdk-python/governance",
+              "sdk-python/evaluate",
+              "sdk-python/trace",
+              "sdk-python/dlp",
+              "sdk-python/errors"
             ]
           }
         ]
@@ -55,37 +72,28 @@
         "tab": "API reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "api-reference/introduction",
+              "api-reference/authentication",
+              "api-reference/errors"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Endpoints",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api-reference/identities-enroll",
+              "api-reference/identities-exchange",
+              "api-reference/identities-refresh",
+              "api-reference/bundle",
+              "api-reference/events",
+              "api-reference/traces",
+              "api-reference/audit"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    ]
   },
   "logo": {
     "light": "/logo/light.svg",
@@ -94,33 +102,26 @@
   "navbar": {
     "links": [
       {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "label": "Dashboard",
+        "href": "https://app.rubric.dev"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/getrubric/platform"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "label": "Get started",
+      "href": "/guides/quickstart"
     }
   },
   "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
+    "options": ["copy", "view", "chatgpt", "claude", "perplexity", "mcp", "cursor", "vscode"]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/getrubric"
     }
   }
 }

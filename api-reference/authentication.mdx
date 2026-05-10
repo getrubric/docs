@@ -1,0 +1,84 @@
+---
+title: "Authentication"
+description: "Three credential types. Each is scoped to exactly what it should be able to do."
+icon: "key"
+---
+
+Rubric's API surface is split into three auth zones. There is **no single all-powerful credential**. Pick the one matching the call you're making.
+
+## 1. JWT-SVID (SDK direction)
+
+What the agent uses to ship audit events, pull bundles, upload traces.
+
+**Header:**
+
+```
+Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6Ii4uLiJ9...
+```
+
+**Issued by:** `POST /v1/identities/enroll` or `POST /v1/identities/exchange`.
+
+**Lifetime:** 60 minutes. The SDK auto-refreshes via `POST /v1/identities/refresh` around the 50-minute mark.
+
+**Algorithm:** EdDSA (Ed25519). Per-org signing key. Public JWKS at `/v1/identities/jwks`.
+
+**Claims:**
+
+| Claim | Notes |
+| --- | --- |
+| `iss` | `https://api.rubric.dev/v1` (or your control plane) |
+| `aud` | `rubric` |
+| `sub` | The agent's stable id. Source of truth for attribution. |
+| `org` | The org's UUID. |
+| `identity_id` | The identity row UUID. |
+| `iat` / `exp` | Standard JWT timing. |
+
+**Scope:** ship audit events for `sub == agentId`, pull bundle, upload trace, refresh token. Cannot enroll new agents, cannot read other agents' data, cannot reach dashboard endpoints.
+
+## 2. Enrollment token (register only)
+
+What the SDK uses to bootstrap **new** agents — call `/v1/identities/enroll`, get a JWT-SVID back.
+
+**Header:**
+
+```
+Authorization: Bearer enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
+```
+
+**Issued by:** Operator clicks **Create token** in the dashboard, or `POST /v1/enrollment-tokens` (Clerk auth).
+
+**Lifetime:** 90 days by default. Renewable from the dashboard.
+
+**Format:** `enr_<6-byte-hex-prefix>.<32-byte-base64url-secret>`. The secret is bcrypt-hashed at rest with 10 rounds.
+
+**Rate limit:** Per-token sliding-window cap (default 60 enrollments/hour). 429 with `retryAfter` when exceeded.
+
+**Scope:** **Only** `POST /v1/identities/enroll`. The token is rejected on every other route at the routing layer.
+
+## 3. Clerk session (dashboard direction)
+
+What the dashboard uses for operator actions: managing policies, identities, enrollment tokens, and reading the audit log.
+
+**Header:**
+
+```
+Authorization: Bearer <clerk session JWT>
+```
+
+**Issued by:** Clerk (`useAuth().getToken()` in the browser, or the Clerk CLI/API for server-side).
+
+**Lifetime:** Per Clerk session (typically rotates frequently).
+
+**Resolved server-side to:** `{ orgId, userId, clerkUserId, clerkOrgId }`. The active org is read from the `o.id` field of the v2 token.
+
+**Scope:** Everything tagged "Dashboard direction" in the [Endpoints page](/api-reference/introduction). Cannot ship audit events as a specific agent (would need to forge a JWT-SVID).
+
+## Mismatched credentials
+
+The API is strict about this. If you call:
+
+- `POST /v1/events` with a Clerk session → `401 invalid_identity`
+- `GET /v1/audit` with a JWT-SVID → `401 invalid_identity`
+- `POST /v1/events` with a JWT-SVID where `body.events[].agentId !== sub` → `403 identity_agent_mismatch`
+
+The strict separation is the security model. There is no "admin" credential that bypasses it.

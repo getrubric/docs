@@ -1,0 +1,87 @@
+---
+title: "Enrollment"
+description: "Create, revoke, and renew enrollment tokens."
+icon: "key"
+---
+
+The Enrollment page is where you mint the long-lived credentials your SDK uses to self-bootstrap.
+
+## Creating a token
+
+Click **Create token** in the top-right. The modal asks for:
+
+- **Name** — a label so you remember what this token is for. Examples: `ci-staging`, `kubernetes-prod`, `mac-laptop-brent`.
+- **Max enrollments / hour** — rate limit. Default 60. Set to 0 to soft-disable a token without revoking.
+- **Expires in** — number of days. Default 90.
+
+Submit and you'll see a **one-time reveal panel** with the full `enr_<prefix>.<secret>` token plus copy-paste snippets:
+
+```bash
+export AG_ENROLLMENT_TOKEN=enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
+export AG_AGENT_NAME=my-bot
+export AG_API_URL=http://localhost:3001
+```
+
+```python
+from agent_governance import Governance
+
+with Governance.bootstrap(agent_name="my-bot") as gov:
+    ...
+```
+
+**The full token is shown exactly once.** Copy it now — the dashboard never reveals it again. If you lose it, revoke and create a successor.
+
+## The list
+
+Each row in the table:
+
+- **Name** — your label.
+- **Prefix** — public part of the token (`enr_a9f3db48e559`). Useful when matching log lines.
+- **Agents enrolled** — count of agent identities created via this token.
+- **Last used** — time of the most recent successful `/enroll` call.
+- **Expires** — when the token expires. Reddens in the last 7 days.
+- **Status** — `active`, `revoked`, or `expired`.
+
+## Renewing
+
+Click **Renew** on a row. Effects:
+
+- A new token is created with the same `name` and `maxEnrollmentsPerHour`, fresh expiry, fresh secret.
+- The old token **stays valid until you revoke it** — so you can rotate without downtime.
+- The new full token is shown once in the same reveal panel.
+
+Typical flow:
+
+1. Renew → grab the new token.
+2. Roll the env var on your fleet (Kubernetes secret update, Vault rotation, etc.).
+3. Verify new agents are enrolling against the new token (the new token's `agents enrolled` counter increments).
+4. Revoke the old token.
+
+## Revoking
+
+Click **Revoke** on a row. Effects:
+
+- Sets `revoked_at = now()`. Future `/enroll` calls with this token return `401 invalid_identity`.
+- Existing agent identities created via this token **continue to work** — their JWTs are independent of the enrollment token. You revoke individual identities separately.
+
+To kill both the token *and* every agent it enrolled, use **Bulk revoke** (placeholder in the current build; coming soon).
+
+## Provenance on agents
+
+In the **Identities** section of any agent detail page, identities created via an enrollment token show:
+
+```
+enrolled · <tokenName>
+```
+
+The chip links back to the token. Identities created via a one-time provisioning secret show `manual`. This is your trail when you need to answer *"how did this agent get its credential?"*.
+
+## Security model recap
+
+Enrollment tokens are **register-only**:
+
+- They cannot ship audit events (those need a JWT-SVID, which only the enroll endpoint mints).
+- They cannot read bundles.
+- They cannot impersonate existing agents — the only thing they can do is create new agent rows in your org and get a JWT for those new rows.
+
+The blast radius if leaked is bounded, auditable (every enrollment is logged with the token id), and revocable per-token. This is by design — see [Identities & enrollment](/concepts/identities) for the full trust model.

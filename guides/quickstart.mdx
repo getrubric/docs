@@ -1,0 +1,118 @@
+---
+title: "Quickstart"
+description: "Install the SDK, enroll an agent, ship your first governed tool call. ~5 minutes."
+icon: "rocket"
+---
+
+This walkthrough takes you from zero to a denied tool call landing in your dashboard. By the end you'll have:
+
+- An enrollment token so your code can self-bootstrap.
+- An agent registered against your org with its own JWT-SVID.
+- A policy denying `delete_file` published as a bundle.
+- An audit event in the dashboard for the denied call, with the full trace attached.
+
+<Note>
+You need a running Rubric control plane. For local development, follow [Installation](/guides/installation) first. The rest of this page assumes the API is reachable at `http://localhost:3001` and the dashboard at `http://localhost:3000`.
+</Note>
+
+## 1. Issue an enrollment token
+
+Open the dashboard, go to **Enrollment** in the sidebar, and click **Create token**. You'll be given an `enr_…` string **shown once** — copy it immediately.
+
+```bash
+export AG_ENROLLMENT_TOKEN=enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
+export AG_API_URL=http://localhost:3001
+```
+
+Enrollment tokens are long-lived, org-scoped, and **register-only** — they cannot ship audit events or read bundles. The blast radius if leaked is bounded ("attacker can create new agent rows in this org") and revocable per-token from the dashboard.
+
+## 2. Install the SDK
+
+<CodeGroup>
+```bash pip
+pip install 'agent-governance[mcp]'
+```
+
+```bash uv
+uv add 'agent-governance[mcp]'
+```
+
+```bash poetry
+poetry add 'agent-governance[mcp]'
+```
+</CodeGroup>
+
+The `[mcp]` extra pulls in MCP. Use `[langchain]` or `[claude-agent]` for those frameworks. Without an extra you still get the core SDK — the adapters are just optional wrappers.
+
+## 3. Bootstrap and evaluate
+
+```python quickstart.py
+from agent_governance import Governance
+
+with Governance.bootstrap(agent_name="quickstart-bot") as gov:
+    gov.wait_until_ready(timeout=10.0)
+    print(f"loaded bundle v{gov.current_bundle.bundleVersion}")
+
+    result = gov.evaluate("list_files", session_id="demo")
+    print(f"list_files → {result.decision}")  # allow
+
+    result = gov.evaluate("delete_file", session_id="demo")
+    print(f"delete_file → {result.decision}")  # allow (no policy yet)
+```
+
+Run it:
+
+```bash
+python quickstart.py
+```
+
+You'll see two `allow` decisions because no policy is matching yet. Open the dashboard's **Agents** page — `quickstart-bot` will appear within a few seconds, and the **Audit log** will show the two events.
+
+## 4. Publish a policy
+
+In the dashboard, go to **Policies** → **New policy**. Paste this YAML and publish:
+
+```yaml
+apiVersion: agent-governance.io/v1
+kind: Policy
+metadata:
+  name: deny-destructive-fs
+  description: Block any agent from removing files.
+spec:
+  defaultEffect: allow
+  rules:
+    - id: no-delete
+      description: Deny delete_file calls
+      effect: deny
+      conditions:
+        - field: tool_name
+          operator: eq
+          value: delete_file
+```
+
+Within ~30 seconds the SDK's bundle poller picks up the new version and the next `evaluate("delete_file", …)` returns `deny`.
+
+## 5. Re-run and see the deny
+
+```bash
+python quickstart.py
+```
+
+Now the second call returns `deny`. In the dashboard's **Audit log**, click the deny row — the trace drawer opens with the full conversation transcript. **Insights** shows the deny on the timeline.
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Wire up your real agent" icon="plug" href="/adapters/mcp">
+    Drop in the MCP, Claude Agent, or LangChain adapter — no manual `evaluate` calls.
+  </Card>
+  <Card title="Write better policies" icon="file-shield" href="/concepts/policies">
+    Conditions, scope, dry-run, version pinning.
+  </Card>
+  <Card title="Attach traces" icon="route" href="/concepts/traces">
+    Pass a `TraceContext` so every audit row has the conversation behind it.
+  </Card>
+  <Card title="Turn on DLP" icon="eye" href="/concepts/dlp">
+    Block tool calls whose arguments contain secrets, PII, or PHI.
+  </Card>
+</CardGroup>

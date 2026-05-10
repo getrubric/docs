@@ -1,0 +1,107 @@
+---
+title: "Evaluation"
+description: "What happens when you call `gov.evaluate(...)`."
+icon: "bolt"
+---
+
+`evaluate()` is the only function on the SDK's hot path. Every governed tool call goes through it. This page traces what it does, in order.
+
+```python
+result = gov.evaluate(
+    tool_name="delete_file",
+    session_id="sess-42",
+    metadata=EvaluationMetadata(input={"path": "/tmp/foo"}),
+    trace=trace,            # optional
+)
+
+if result.decision == "deny":
+    raise PermissionError(result.reason)
+```
+
+## Step by step
+
+<Steps>
+  <Step title="DLP scan (optional)">
+    If DLP is enabled, the detector scans `metadata.input` (and `args`/`kwargs`) for patterns. The detection is summarized into `dlp_detected`, `dlp_severity`, `dlp_types` and added to the request. ~50µs for regex; ~1ms for Presidio.
+  </Step>
+  <Step title="Build the EvaluationRequest">
+    The SDK assembles `{ tool_name, agent_id, ...metadata, ...dlp_fields }`. `agent_id` is **always** the JWT-bound id; passing a different value is silently ignored.
+  </Step>
+  <Step title="Evaluate against the bundle">
+    The in-process evaluator walks each policy in the bundle. For each policy: walk rules top-to-bottom. First matching rule wins; its `effect` becomes the result. If no rule matches, the policy's `defaultEffect` applies. If multiple policies match, **deny wins** (any deny short-circuits the bundle).
+  </Step>
+  <Step title="Build the AuditEvent">
+    The SDK packs `{ ts, agentId, sessionId, toolName, decision, policyId, policyVersion, latencyMs, metadata, traceId? }`. Deny code and reason go into `metadata.denyCode` / `metadata.denyReason`. DLP detection goes into `metadata.dlp`.
+  </Step>
+  <Step title="Upload trace (if attached)">
+    If a `TraceContext` was passed, the SDK appends a `ToolCallMessage` and uploads the running messages array to `/v1/traces`. The returned `traceId` and position are attached to the audit event.
+  </Step>
+  <Step title="Enqueue audit event">
+    The event goes into the audit sink's in-memory queue. The flush thread batches up to 100 events or 1 second of latency and POSTs to `/v1/events`. **Your code does not wait on the network.**
+  </Step>
+  <Step title="Return EvaluationResult">
+    `result.decision`, `result.reason`, `result.code`, `result.matchedPolicyId`, `result.matchedRuleId`, `result.latencyMs` are returned synchronously.
+  </Step>
+</Steps>
+
+## Latency
+
+The synchronous portion of `evaluate()` is dominated by:
+
+- Pure-Python evaluator: **~50–200µs** depending on bundle size.
+- Native (Rust) evaluator (`pip install agent-governance[runtime]`): **~5–20µs**.
+- DLP scan: **~50µs** (regex), **~1ms** (Presidio).
+- Trace upload (if attached): **2–5ms** — runs synchronously to give you `traceId` for the audit event. If you don't need traces, omit the parameter.
+
+Without traces and without DLP, `evaluate()` finishes in well under 1ms on a modern laptop. With traces it's bounded by your network RTT to the control plane.
+
+## What goes in the audit event
+
+```python
+AuditEvent(
+    agentId="payments-bot",
+    sessionId="sess-42",
+    ts="2026-05-10T15:09:29.123Z",
+    toolName="delete_file",
+    decision="deny",
+    policyId="...",        # which policy matched
+    policyVersion=4,
+    latencyMs=0.18,
+    metadata={
+        "input": {"path": "/tmp/foo"},
+        "denyCode": "no-delete",
+        "denyReason": "Deny delete_file calls",
+        "dlp": {"severity": "high", "topType": "EMAIL", "typeCount": 2},
+    },
+    framework="mcp",
+    version="0.9.4",
+    traceId="...",         # null if no trace was attached
+    tracePosition=12,
+)
+```
+
+## When evaluation fails
+
+The SDK is conservative: if anything goes wrong inside `evaluate()`, you get an `EvaluationResult` with the **default-allow** decision rather than an exception. Specifically:
+
+- **No bundle loaded yet** (cold-start race): default-allow, `result.matchedPolicyId = None`.
+- **Bundle parse error**: same — default-allow, error logged.
+- **DLP detector raises**: the detector is treated as no-detection, error logged.
+- **Trace upload fails**: the audit event is still enqueued without the `traceId`, error logged.
+
+This is deliberate. A misconfigured Rubric should never block your agent from doing its job. To enforce default-deny, set `spec.defaultEffect: deny` in your policy and let the evaluator return that explicitly.
+
+## Result shape
+
+```python
+class EvaluationResult(BaseModel):
+    decision: Literal["allow", "deny"]
+    reason: str | None
+    code: str | None
+    matchedPolicyId: str | None
+    matchedPolicyVersion: int | None
+    matchedRuleId: str | None
+    latencyMs: float
+```
+
+`reason` and `code` are populated for denies (from the matched rule's id and description). For allows they're None.

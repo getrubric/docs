@@ -1,0 +1,98 @@
+---
+title: "POST /v1/events"
+description: "Ship a batch of audit events."
+icon: "upload"
+---
+
+Called by the SDK's audit sink. Events are batched up to 100 per request and flushed every ~1 second (or sooner if the queue fills). You usually don't call this endpoint directly; the SDK does.
+
+## Request
+
+```http
+POST /v1/events
+Authorization: Bearer <JWT-SVID>
+Content-Type: application/json
+
+{
+  "events": [
+    {
+      "agentId": "payments-bot",
+      "sessionId": "sess-42",
+      "ts": "2026-05-10T15:09:29.123Z",
+      "toolName": "delete_file",
+      "decision": "deny",
+      "policyId": "...",
+      "policyVersion": 4,
+      "latencyMs": 0.18,
+      "metadata": {
+        "input": {"path": "/var/log/old.log"},
+        "denyCode": "no-delete",
+        "denyReason": "Deny delete_file calls"
+      },
+      "framework": "mcp",
+      "version": "0.9.4",
+      "traceId": "...",
+      "tracePosition": 12
+    }
+  ]
+}
+```
+
+### Per-event fields
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `agentId` | string | yes | **Must equal the JWT's `sub`.** Mismatch returns `403 identity_agent_mismatch`. |
+| `sessionId` | string | yes | Groups events in the audit log. |
+| `ts` | ISO timestamp | yes | When the call happened (client clock). |
+| `toolName` | string | yes | Tool name passed to `evaluate()`. |
+| `decision` | `"allow" \| "deny"` | yes | Result of the in-process evaluation. |
+| `policyId` | UUID \| null | no | Which policy matched, if any. |
+| `policyVersion` | int \| null | no | Version of the matched policy. |
+| `latencyMs` | float | yes | In-process evaluator latency. |
+| `metadata` | object \| null | no | Free-form. SDK populates `input`, `denyCode`, `denyReason`, `dlp`. |
+| `framework` | string \| null | no | `"mcp"`, `"claude-agent"`, `"langchain"`, `"python"`. |
+| `version` | string \| null | no | SDK version. |
+| `traceId` | UUID \| null | no | If a trace was uploaded. |
+| `tracePosition` | int \| null | no | Position within that trace's messages array. |
+
+### Limits
+
+- Max **100 events** per request (`AUDIT_EVENT_BATCH_MAX_SIZE`).
+- Max **1 MB** total request body.
+
+## Response 202
+
+```json
+{ "accepted": 100 }
+```
+
+`202 Accepted` because the events are queued for async processing (real-time deny stream, incident detection). They're durable to disk before the response returns.
+
+## Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| `400` | `validation_failed` | A field is missing or malformed. |
+| `401` | `invalid_identity` | JWT missing, malformed, revoked, or expired. |
+| `403` | `identity_agent_mismatch` | Any event has `agentId !== sub`. **Whole batch is rejected** — the SDK doesn't ship with mixed agent IDs anyway. |
+
+## Side effects
+
+Each accepted event triggers, async:
+
+1. **Realtime broadcast.** Denies are pushed to dashboard clients via websocket.
+2. **Incident detection.** A deny may auto-open or attach to an incident.
+3. **Risk-score update.** The agent's risk score is recomputed.
+4. **Last-seen update.** The agent's `lastSeenAt` is touched.
+
+These are best-effort. A single failure in incident detection does not roll back the audit ingest.
+
+## cURL
+
+```bash
+curl -X POST $RUBRIC_API/v1/events \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"events":[...]}'
+```

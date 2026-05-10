@@ -1,0 +1,66 @@
+---
+title: "POST /v1/identities/exchange"
+description: "Exchange a one-time provisioning secret for a JWT-SVID."
+icon: "right-left"
+---
+
+Used by the SDK's single-agent provisioning-secret bootstrap path. The provisioning secret is consumed on first use and becomes invalid afterward.
+
+For multi-agent fleets, prefer [`/v1/identities/enroll`](/api-reference/identities-enroll) — it's idempotent and supports rate-limited rotation.
+
+## Request
+
+```http
+POST /v1/identities/exchange
+Content-Type: application/json
+
+{
+  "provisioningSecret": "prov_<prefix>.<secret>"
+}
+```
+
+### Body
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `provisioningSecret` | `string` | yes | The full secret. Format `prov_<prefix>.<secret>`. |
+
+No `Authorization` header — the secret IS the credential.
+
+## Response 200
+
+```json
+{
+  "token": "eyJhbGciOiJFZERTQSI...",
+  "expiresAt": "2026-05-10T16:09:29.123Z",
+  "agentId": "payments-bot",
+  "identityId": "9c2e5d4b-..."
+}
+```
+
+Same shape as `/enroll`.
+
+## Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| `401` | `invalid_identity` | Secret missing, malformed, expired, or already consumed. |
+| `403` | `forbidden` | The associated identity row is revoked. |
+
+## Lifecycle
+
+1. Operator clicks **Issue identity** on an agent's detail page in the dashboard.
+2. The dashboard shows the secret **once** with copy-paste snippets.
+3. Operator copies the secret into the agent's environment.
+4. SDK calls `/exchange` on first boot. The secret is marked consumed.
+5. Subsequent restarts use `/refresh` (the JWT is the credential now). The secret is no longer needed.
+
+If the SDK process is killed and restarted **before** the JWT was persisted, you'll need to issue a fresh secret because the old one is consumed. This is why enrollment tokens are preferred for fleets.
+
+## cURL
+
+```bash
+curl -X POST $RUBRIC_API/v1/identities/exchange \
+  -H "Content-Type: application/json" \
+  -d '{"provisioningSecret":"prov_..."}'
+```

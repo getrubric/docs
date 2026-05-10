@@ -1,0 +1,136 @@
+---
+title: "Governance"
+description: "The entry point — bootstrap, lifecycle, properties."
+icon: "shield"
+---
+
+```python
+from agent_governance import Governance
+```
+
+`Governance` is the SDK's main class. You construct one at process startup, hold onto it for the life of the agent, and shut it down on exit. It owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader.
+
+## `Governance.bootstrap(...)`
+
+Class method that builds a fully-initialized instance. The recommended construction path.
+
+```python
+@classmethod
+def bootstrap(
+    cls,
+    *,
+    provisioning_secret: str | None = None,
+    enrollment_token: str | None = None,
+    agent_name: str | None = None,
+    api_url: str | None = None,
+    bundle_poll_seconds: float = 30.0,
+    autostart: bool = True,
+    dlp: bool | DlpMode | Detector | None = None,
+) -> "Governance":
+```
+
+### Parameters
+
+| Param | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `provisioning_secret` | `str \| None` | `AG_PROVISIONING_SECRET` env | One-time secret. Use for single-agent setups. |
+| `enrollment_token` | `str \| None` | `AG_ENROLLMENT_TOKEN` env | Long-lived org token. Use for fleets. |
+| `agent_name` | `str \| None` | `AG_AGENT_NAME` env | **Required with enrollment.** Stable name → stable identity. |
+| `api_url` | `str \| None` | `AG_API_URL` env, or `http://localhost:3001` | Control plane URL. |
+| `bundle_poll_seconds` | `float` | `30.0` | How often to poll for new bundle versions. |
+| `autostart` | `bool` | `True` | Start the audit sink and bundle poller immediately. |
+| `dlp` | `bool \| DlpMode \| Detector \| None` | `AG_DLP` env or `None` | DLP detector. See [DLP](/concepts/dlp). |
+
+### Bootstrap resolution
+
+The two credential paths are mutually exclusive. Resolution order:
+
+1. **Enrollment** — if `enrollment_token` (or `AG_ENROLLMENT_TOKEN`) is set, the SDK calls `/v1/identities/enroll`. `agent_name` (or `AG_AGENT_NAME`) is required.
+2. **Provisioning secret** — if `provisioning_secret` (or `AG_PROVISIONING_SECRET`) is set, the SDK calls `/v1/identities/exchange`.
+3. Otherwise, `ValueError` is raised.
+
+### Example
+
+```python
+from agent_governance import Governance
+
+# Enrollment path (recommended for fleets)
+with Governance.bootstrap(agent_name="payments-bot") as gov:
+    # AG_ENROLLMENT_TOKEN is read from env automatically
+    ...
+
+# Provisioning-secret path (single agent)
+with Governance.bootstrap() as gov:
+    # AG_PROVISIONING_SECRET is read from env automatically
+    ...
+```
+
+## Lifecycle
+
+`Governance` is a context manager. The recommended pattern:
+
+```python
+with Governance.bootstrap(agent_name="my-bot") as gov:
+    # Optional: block until first bundle pull completes
+    gov.wait_until_ready(timeout=10.0)
+
+    # ...your agent loop...
+```
+
+The `with` block calls `gov.shutdown()` automatically on exit, which:
+
+- Stops the bundle poller.
+- Flushes any queued audit events.
+- Closes the trace uploader's HTTP session.
+- Stops the JWT refresh thread.
+
+## Properties
+
+### `agent_id: str`
+
+The stable id bound to the JWT's `sub` claim. Set on bootstrap; never changes.
+
+```python
+print(gov.agent_id)
+# payments-bot
+```
+
+### `current_bundle: Bundle | None`
+
+The most recently pulled policy bundle. `None` until the first pull completes.
+
+```python
+gov.wait_until_ready(timeout=10.0)
+b = gov.current_bundle
+print(f"v{b.bundleVersion} with {len(b.policies)} policies")
+```
+
+## Methods
+
+### `wait_until_ready(timeout=10.0) -> bool`
+
+Block until the first bundle pull completes (success or failure). Returns `True` if a bundle was pulled, `False` on timeout.
+
+Optional — `evaluate()` is safe to call before the first pull (default-allow). But if you want your agent to stop and wait for policies, call this first.
+
+### `evaluate(tool_name, *, session_id, ...) -> EvaluationResult`
+
+Evaluate a tool call against the current bundle and ship an audit event. See [`evaluate()`](/sdk-python/evaluate) for the full signature.
+
+### `start() / shutdown()`
+
+Manual lifecycle for cases where the `with` block doesn't fit (e.g., long-lived service classes). Don't call `start()` more than once.
+
+## Without `bootstrap`
+
+For tests and advanced flows, you can pass a pre-built `TokenStore`:
+
+```python
+from agent_governance import Governance
+from agent_governance.identity import TokenStore
+
+store = TokenStore(...)  # already initialized
+gov = Governance(token_store=store, api_url="http://localhost:3001")
+```
+
+Reserve this for tests. In application code, always use `bootstrap()`.
