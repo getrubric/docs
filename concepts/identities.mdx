@@ -31,7 +31,7 @@ A [SPIFFE-style](https://spiffe.io/) signed JWT with a few claims that matter:
 Enrollment is the only bootstrap path. The SDK presents a long-lived, org-scoped, **register-only** enrollment token plus an `agentName`, the control plane calls `POST /v1/identities/enroll`, and gets back a freshly-minted JWT.
 
 ```python
-from agent_governance import Governance
+from rubric import Governance
 
 # AG_ENROLLMENT_TOKEN and AG_AGENT_NAME from env
 with Governance.bootstrap(agent_name="payments-bot") as gov:
@@ -41,9 +41,9 @@ with Governance.bootstrap(agent_name="payments-bot") as gov:
 Or the decorator API:
 
 ```python
-import agent_governance as ag
+import rubric
 
-ag.init(agent_name="payments-bot")
+rubric.init(agent_name="payments-bot")
 ```
 
 Properties of the enrollment flow:

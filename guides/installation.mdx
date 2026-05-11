@@ -18,7 +18,7 @@ The control plane is an open-source monorepo at [github.com/getrubric/platform](
 
 <Steps>
   <Step title="Postgres 15+">
-    The API uses Drizzle migrations against a local Postgres. `createdb agent_governance` is enough — no extensions required.
+    The API uses Drizzle migrations against a local Postgres. `createdb rubric` is enough — no extensions required.
   </Step>
   <Step title="Node 20+ and pnpm">
     The monorepo uses pnpm workspaces. `npm install -g pnpm` if you don't have it.
@@ -48,19 +48,19 @@ pnpm dev
 
 ## SDK
 
-The Python SDK is published as `agent-governance` on PyPI.
+The Python SDK is published as `rubric` on PyPI.
 
 <CodeGroup>
 ```bash pip
-pip install agent-governance
+pip install rubric
 ```
 
 ```bash uv
-uv add agent-governance
+uv add rubric
 ```
 
 ```bash poetry
-poetry add agent-governance
+poetry add rubric
 ```
 </CodeGroup>
 
@@ -70,13 +70,13 @@ Choose the extra(s) matching your agent framework. Each extra is a thin adapter 
 
 | Extra | When to use it |
 | --- | --- |
-| `agent-governance[mcp]` | Anything that speaks the Model Context Protocol. |
-| `agent-governance[claude-agent]` | Claude Agent SDK (`claude-agent-sdk`). |
-| `agent-governance[langchain]` | LangChain `BaseTool` lists. |
-| `agent-governance[runtime]` | Optional native evaluator backend (Rust). Faster, identical semantics. |
-| `agent-governance[presidio]` | Presidio-backed DLP detection. |
+| `rubric[mcp]` | Anything that speaks the Model Context Protocol. |
+| `rubric[claude-agent]` | Claude Agent SDK (`claude-agent-sdk`). |
+| `rubric[langchain]` | LangChain `BaseTool` lists. |
+| `rubric[runtime]` | Optional native evaluator backend (Rust). Faster, identical semantics. |
+| `rubric[presidio]` | Presidio-backed DLP detection. |
 
-You can stack them: `pip install 'agent-governance[mcp,runtime,presidio]'`.
+You can stack them: `pip install 'rubric[mcp,runtime,presidio]'`.
 
 ## Verify
 

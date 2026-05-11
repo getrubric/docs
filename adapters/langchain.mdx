@@ -9,7 +9,7 @@ The LangChain adapter takes a list of `BaseTool`s and returns a parallel list wi
 ## Install
 
 ```bash
-pip install 'agent-governance[langchain]'
+pip install 'rubric[langchain]'
 ```
 
 Pulls `langchain-core` as a peer dep. Compatible with langchain-core 0.3.x.
@@ -17,8 +17,8 @@ Pulls `langchain-core` as a peer dep. Compatible with langchain-core 0.3.x.
 ## Basic usage
 
 ```python
-from agent_governance import Governance
-from agent_governance.adapters.langchain import govern_tools, GovernanceDeniedError
+from rubric import Governance
+from rubric.adapters.langchain import govern_tools, GovernanceDeniedError
 from langchain_core.tools import tool
 
 @tool
@@ -77,7 +77,7 @@ class GovernanceDeniedError(PermissionError):
 LangChain's agent loop sees `PermissionError`, surfaces it as a tool failure to the model, and the model adapts. If you'd rather catch the deny and handle it yourself, wrap your invocation:
 
 ```python
-from agent_governance.adapters.langchain import GovernanceDeniedError
+from rubric.adapters.langchain import GovernanceDeniedError
 
 try:
     agent.invoke({"input": "Delete /tmp/foo"})
@@ -94,7 +94,7 @@ If a tool has neither a `func` nor a `_run` (rare; usually a custom subclass wit
 ## With traces
 
 ```python
-from agent_governance import TraceContext
+from rubric import TraceContext
 
 trace = TraceContext()
 governed = govern_tools(gov, tools, session_id="ops-session", trace=trace)

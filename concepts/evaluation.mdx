@@ -49,7 +49,7 @@ if result.decision == "deny":
 The synchronous portion of `evaluate()` is dominated by:
 
 - Pure-Python evaluator: **~50–200µs** depending on bundle size.
-- Native (Rust) evaluator (`pip install agent-governance[runtime]`): **~5–20µs**.
+- Native (Rust) evaluator (`pip install rubric[runtime]`): **~5–20µs**.
 - DLP scan: **~50µs** (regex), **~1ms** (Presidio).
 - Trace upload (if attached): **2–5ms** — runs synchronously to give you `traceId` for the audit event. If you don't need traces, omit the parameter.
 

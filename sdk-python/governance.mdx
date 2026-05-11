@@ -5,10 +5,10 @@ icon: "shield"
 ---
 
 ```python
-from agent_governance import Governance
+from rubric import Governance
 ```
 
-`Governance` owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader. Most application code should use the [decorator API](/sdk-python/init) instead — `ag.init()` once, `@ag.tool` per function. Reach for `Governance` directly when you need:
+`Governance` owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader. Most application code should use the [decorator API](/sdk-python/init) instead — `rubric.init()` once, `@rubric.tool` per function. Reach for `Governance` directly when you need:
 
 - **Multiple agents in one process.** The singleton supports one identity at a time; `Governance` instances are independent.
 - **Tests.** Construct a `Governance` per test for isolation.
@@ -50,7 +50,7 @@ Both `enrollment_token` and `agent_name` are required. If either is missing (aft
 ### Example
 
 ```python
-from agent_governance import Governance
+from rubric import Governance
 
 with Governance.bootstrap(agent_name="payments-bot") as gov:
     # AG_ENROLLMENT_TOKEN read from env automatically
@@ -118,8 +118,8 @@ Manual lifecycle for cases where the `with` block doesn't fit (e.g., long-lived 
 For tests and advanced flows, you can pass a pre-built `TokenStore`:
 
 ```python
-from agent_governance import Governance
-from agent_governance.identity import TokenStore
+from rubric import Governance
+from rubric.identity import TokenStore
 
 store = TokenStore(...)  # already initialized
 gov = Governance(token_store=store, api_url="http://localhost:3001")

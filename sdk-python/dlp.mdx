@@ -13,14 +13,14 @@ See [DLP concepts](/concepts/dlp) for the philosophy and policy patterns. This p
 Three knobs — pick one:
 
 ```python
-from agent_governance import Governance
+from rubric import Governance
 
 # 1. Constructor kwarg
 with Governance.bootstrap(agent_name="…", dlp="auto") as gov:
     ...
 
 # 2. Constructor with a concrete detector
-from agent_governance.dlp import RegexDetector
+from rubric.dlp import RegexDetector
 with Governance.bootstrap(agent_name="…", dlp=RegexDetector()) as gov:
     ...
 
@@ -31,7 +31,7 @@ with Governance.bootstrap(agent_name="…", dlp=RegexDetector()) as gov:
 ## Modes
 
 ```python
-from agent_governance.constants import (
+from rubric.constants import (
     DLP_MODE_OFF,
     DLP_MODE_REGEX,
     DLP_MODE_PRESIDIO,

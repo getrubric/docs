@@ -21,6 +21,7 @@ Open the dashboard, go to **Enrollment** in the sidebar, and click **Create toke
 
 ```bash
 export AG_ENROLLMENT_TOKEN=enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
+export AG_AGENT_NAME=quickstart-bot
 export AG_API_URL=http://localhost:3001
 ```
 
@@ -30,15 +31,15 @@ Enrollment tokens are long-lived, org-scoped, and **register-only** — they can
 
 <CodeGroup>
 ```bash pip
-pip install 'agent-governance[mcp]'
+pip install 'rubric[mcp]'
 ```
 
 ```bash uv
-uv add 'agent-governance[mcp]'
+uv add 'rubric[mcp]'
 ```
 
 ```bash poetry
-poetry add 'agent-governance[mcp]'
+poetry add 'rubric[mcp]'
 ```
 </CodeGroup>
 
@@ -47,24 +48,24 @@ The `[mcp]` extra pulls in MCP. Use `[langchain]` or `[claude-agent]` for those 
 ## 3. Bootstrap and decorate
 
 ```python quickstart.py
-import agent_governance as ag
+import rubric
 
-# One-time bootstrap. Reads AG_ENROLLMENT_TOKEN + AG_API_URL from env.
-ag.init(agent_name="quickstart-bot")
+# One-time bootstrap. Reads AG_ENROLLMENT_TOKEN + AG_AGENT_NAME + AG_API_URL from env.
+rubric.init(agent_name="quickstart-bot")
 
-@ag.tool
+@rubric.tool
 def list_files(path: str) -> str:
     return f"(would list {path})"
 
-@ag.tool
+@rubric.tool
 def delete_file(path: str) -> str:
     return f"(would delete {path})"
 
-with ag.session("demo"):
+with rubric.session("demo"):
     print("list:", list_files("/tmp"))
     try:
         print("delete:", delete_file("/tmp/foo"))
-    except ag.GovernanceDeniedError as e:
+    except rubric.GovernanceDeniedError as e:
         print("delete blocked:", e)
 ```
 
@@ -74,11 +75,15 @@ Run it:
 python quickstart.py
 ```
 
-You'll see two `allow` decisions because no policy is matching yet. Open the dashboard's **Agents** page — `quickstart-bot` will appear within a few seconds, and the **Audit log** will show the two events.
+The agent shows up on the dashboard's **Agents** page within a few seconds. The two calls won't be evaluated yet — a fresh agent has no policies scoped to it, so its bundle is empty and everything default-allows.
 
-## 4. Publish a policy
+## 4. Author a policy and scope it to your agent
 
-In the dashboard, go to **Policies** → **New policy**. Paste this YAML and publish:
+In the dashboard, go to **Policies** → **New policy**. The form has three required sections:
+
+- **Name / slug** — call it `deny-destructive-fs`.
+- **Applied to agents** — pick `quickstart-bot` from the list. **This is required at publish time.** Empty scope means the policy applies to nobody.
+- **YAML** — paste this:
 
 ```yaml
 apiVersion: agent-governance.io/v1
@@ -98,7 +103,7 @@ spec:
           value: delete_file
 ```
 
-Within ~30 seconds the SDK's bundle poller picks up the new version and the next `delete_file(...)` call raises `GovernanceDeniedError`.
+Save the draft, then click **Publish**. The control plane rebuilds the per-agent bundle for `quickstart-bot` to include this policy. Within ~30 seconds the SDK's bundle poller picks it up and the next `delete_file(...)` call raises `GovernanceDeniedError`.
 
 ## 5. Re-run and see the deny
 

@@ -15,10 +15,10 @@ Enable via the `dlp=` kwarg on `Governance.bootstrap()` or the `AG_DLP` env var.
 | `off` (default) | 0 | Nothing. |
 | `regex` | ~50µs/call | Email, phone, SSN, credit card, IP, AWS keys, GitHub tokens, JWT, Slack tokens, generic high-entropy secrets. |
 | `presidio` | ~1ms/call | Everything in `regex` plus NER-backed PII (names, locations, organizations, medical) via Microsoft Presidio. |
-| `auto` | as available | Presidio if installed (`agent-governance[presidio]`), otherwise regex. |
+| `auto` | as available | Presidio if installed (`rubric[presidio]`), otherwise regex. |
 
 ```python
-from agent_governance import Governance
+from rubric import Governance
 
 with Governance.bootstrap(agent_name="payments-bot", dlp="auto") as gov:
     ...
@@ -97,8 +97,8 @@ That's the whole policy. Drop it in, publish, and any `evaluate()` whose argumen
 Pass any object with a `detect(payload: dict) -> DlpDetection | None` method:
 
 ```python
-from agent_governance.dlp import DlpDetection
-from agent_governance import Governance
+from rubric.dlp import DlpDetection
+from rubric import Governance
 
 class MyDetector:
     def detect(self, payload):

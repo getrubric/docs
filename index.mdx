@@ -44,16 +44,16 @@ The SDK is a thin Python library. The control plane is a self-hostable API + das
 ## Three lines of code
 
 ```python
-import agent_governance as ag
+import rubric
 
-ag.init(agent_name="payments-bot")  # once, at process startup
+rubric.init(agent_name="payments-bot")  # once, at process startup
 
-@ag.tool
+@rubric.tool
 def delete_file(path: str) -> str:
     ...                              # raises GovernanceDeniedError if denied
 ```
 
-Set `AG_ENROLLMENT_TOKEN` once, sprinkle `@ag.tool` over your tool functions, and every call routes through your policy bundle. No `with` blocks, no manual `evaluate()` calls.
+Set `AG_ENROLLMENT_TOKEN` once, sprinkle `@rubric.tool` over your tool functions, and every call routes through your policy bundle. No `with` blocks, no manual `evaluate()` calls.
 
 ## Pick your adapter
 

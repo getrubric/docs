@@ -5,17 +5,17 @@ icon: "wand-magic-sparkles"
 ---
 
 ```python
-import agent_governance as ag
+import rubric
 ```
 
-The decorator API is the recommended way to use the SDK. `init()` once at process startup, then decorate any function with `@ag.tool` — every call routes through your policy bundle automatically.
+The decorator API is the recommended way to use the SDK. `init()` once at process startup, then decorate any function with `@rubric.tool` — every call routes through your policy bundle automatically.
 
 For multi-agent processes or tests where you need explicit lifecycle control, use the [`Governance` class](/sdk-python/governance) directly. The two coexist; the singleton wraps a `Governance` under the hood.
 
 ## init()
 
 ```python
-ag.init(
+rubric.init(
     *,
     agent_name: str | None = None,
     enrollment_token: str | None = None,
@@ -33,20 +33,20 @@ Registers an `atexit` hook that flushes audit events on normal process exit. Har
 Returns the underlying `Governance` instance if you need it (rarely).
 
 ```python
-ag.init(agent_name="payments-bot")
+rubric.init(agent_name="payments-bot")
 # AG_ENROLLMENT_TOKEN and AG_API_URL come from env.
 ```
 
 ## @tool
 
 ```python
-@ag.tool                                 # use function name as tool name
+@rubric.tool                                 # use function name as tool name
 def delete_file(path: str) -> str: ...
 
-@ag.tool(name="custom_name")             # override tool name
+@rubric.tool(name="custom_name")             # override tool name
 def list_files(path: str) -> list: ...
 
-@ag.tool                                 # async functions just work
+@rubric.tool                                 # async functions just work
 async def fetch_url(url: str) -> str: ...
 ```
 
@@ -69,20 +69,20 @@ The function's positional arguments land in the audit event's `metadata.args`; k
 ## session()
 
 ```python
-with ag.session("conv-42"):
+with rubric.session("conv-42"):
     delete_file("/tmp/foo")  # audit row gets sessionId="conv-42"
 ```
 
-Context manager that sets the session id for any `@ag.tool` calls inside the block. Falls back to `default_session_id` (default `"default"`) outside any scope.
+Context manager that sets the session id for any `@rubric.tool` calls inside the block. Falls back to `default_session_id` (default `"default"`) outside any scope.
 
 ContextVars under the hood — propagates across `await` points within the same task. Safe in async code and threadpools.
 
 ## trace()
 
 ```python
-with ag.session("conv-42"), ag.trace() as trace:
-    trace.append(ag.UserMessage(content="Delete /tmp/foo"))
-    trace.append(ag.AssistantMessage(content="On it."))
+with rubric.session("conv-42"), rubric.trace() as trace:
+    trace.append(rubric.UserMessage(content="Delete /tmp/foo"))
+    trace.append(rubric.AssistantMessage(content="On it."))
     delete_file("/tmp/foo")  # trace uploaded with the audit event
 ```
 
@@ -90,12 +90,12 @@ Context manager that binds a [`TraceContext`](/sdk-python/trace) for tool calls 
 
 ## evaluate()
 
-For ad-hoc evaluations outside a `@ag.tool`-decorated function:
+For ad-hoc evaluations outside a `@rubric.tool`-decorated function:
 
 ```python
-result = ag.evaluate(
+result = rubric.evaluate(
     "delete_file",
-    metadata=ag.EvaluationMetadata(input={"path": "/tmp/foo"}),
+    metadata=rubric.EvaluationMetadata(input={"path": "/tmp/foo"}),
 )
 if result.decision == "deny":
     raise PermissionError(result.reason)
@@ -106,7 +106,7 @@ Module-level shim around `gov.evaluate()`. Reads the singleton, the session Cont
 ## shutdown()
 
 ```python
-ag.shutdown()
+rubric.shutdown()
 ```
 
 Stops the singleton and flushes in-flight audit events. Called automatically by the `atexit` hook on normal exit. Safe to call manually for explicit cleanup (tests, child-process forks).
@@ -115,9 +115,9 @@ Stops the singleton and flushes in-flight audit events. Called automatically by 
 
 | Error | When |
 | --- | --- |
-| `ag.GovernanceNotInitializedError` | `@tool` or `evaluate()` called before `init()`. |
-| `ag.GovernanceDeniedError` | A policy denied a `@tool`-wrapped call. Has `.tool_name` and `.result` attributes. |
-| `ag.GovernanceProblemError` | Control-plane returned an RFC 9457 problem response (e.g. enrollment token revoked). |
+| `rubric.GovernanceNotInitializedError` | `@tool` or `evaluate()` called before `init()`. |
+| `rubric.GovernanceDeniedError` | A policy denied a `@tool`-wrapped call. Has `.tool_name` and `.result` attributes. |
+| `rubric.GovernanceProblemError` | Control-plane returned an RFC 9457 problem response (e.g. enrollment token revoked). |
 
 ## When NOT to use the singleton
 

@@ -9,7 +9,7 @@ The Claude Agent adapter installs a `PreToolUse` hook on a `ClaudeAgentOptions` 
 ## Install
 
 ```bash
-pip install 'agent-governance[claude-agent]'
+pip install 'rubric[claude-agent]'
 ```
 
 Pulls the `claude-agent-sdk` package as a peer dep. Compatible with claude-agent-sdk 0.2.x and later.
@@ -17,8 +17,8 @@ Pulls the `claude-agent-sdk` package as a peer dep. Compatible with claude-agent
 ## Basic usage
 
 ```python
-from agent_governance import Governance
-from agent_governance.adapters.claude_agent import governance_hook_matchers
+from rubric import Governance
+from rubric.adapters.claude_agent import governance_hook_matchers
 from claude_agent_sdk import ClaudeAgentOptions, query
 
 with Governance.bootstrap(agent_name="research-bot") as gov:
@@ -48,7 +48,7 @@ Claude Agent sees MCP tool names as `mcp__<server>__<tool>` (e.g. `mcp__quicksta
 If you want to keep the full prefixed name (so policies can target a specific MCP server), pass a custom extractor:
 
 ```python
-from agent_governance.adapters.claude_agent import governance_hook_matchers
+from rubric.adapters.claude_agent import governance_hook_matchers
 
 def keep_full_name(raw: str) -> str:
     return raw

@@ -9,16 +9,16 @@ The MCP adapter wraps an `mcp.ClientSession` so every `call_tool()` is gated by 
 ## Install
 
 ```bash
-pip install 'agent-governance[mcp]'
+pip install 'rubric[mcp]'
 ```
 
-The `[mcp]` extra pulls `mcp` as a dependency. If you already have it installed, `pip install agent-governance` is enough.
+The `[mcp]` extra pulls `mcp` as a dependency. If you already have it installed, `pip install rubric` is enough.
 
 ## Basic usage
 
 ```python
-from agent_governance import Governance
-from agent_governance.adapters.mcp import govern_mcp_session
+from rubric import Governance
+from rubric.adapters.mcp import govern_mcp_session
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -65,7 +65,7 @@ The model sees the error message in the tool result and reacts — usually by tr
 Pass a `TraceContext` and it's used for every governed call in this session:
 
 ```python
-from agent_governance import TraceContext, UserMessage
+from rubric import TraceContext, UserMessage
 
 trace = TraceContext()
 trace.append(UserMessage(content="Clean up old logs"))
