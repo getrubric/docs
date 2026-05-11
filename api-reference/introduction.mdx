@@ -6,12 +6,9 @@ icon: "terminal"
 
 The Rubric REST API is the source of truth for everything the dashboard and the SDK do. It's stable, versioned (`/v1`), and documented here.
 
-## Base URLs
+## Base URL
 
-| Environment | URL |
-| --- | --- |
-| Local | `http://localhost:3001` |
-| Production (deployed control plane) | Your URL |
+The API lives at your control plane's hostname (the same host that serves your dashboard, with the API listening on its own subdomain or port). The SDK reads it from `AG_API_URL`. Examples in this reference use `$RUBRIC_API` as a stand-in.
 
 ## Endpoints by direction
 

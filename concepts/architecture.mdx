@@ -35,11 +35,9 @@ The SDK runs in-process, in the same Python interpreter as your agent. Three res
 
 The SDK never blocks your tool dispatch on a network call. Outages of the control plane do not stop your agent.
 
-## Control plane — your single tenant
+## Control plane
 
-The control plane is one Fastify process on top of one Postgres. Self-host it; runs locally for development.
-
-What it does:
+The control plane is the API + dashboard your agents and operators talk to. What it does:
 
 - Issues per-agent JWT-SVIDs (60-min lifetime, EdDSA-signed, auto-refreshed by the SDK)
 - Stores policies (versioned, with diff and dry-run) and serves them as a signed bundle
