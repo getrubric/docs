@@ -1,0 +1,129 @@
+---
+title: "init() & @tool"
+description: "The top-level decorator API. Boot once, decorate functions, ship."
+icon: "wand-magic-sparkles"
+---
+
+```python
+import agent_governance as ag
+```
+
+The decorator API is the recommended way to use the SDK. `init()` once at process startup, then decorate any function with `@ag.tool` — every call routes through your policy bundle automatically.
+
+For multi-agent processes or tests where you need explicit lifecycle control, use the [`Governance` class](/sdk-python/governance) directly. The two coexist; the singleton wraps a `Governance` under the hood.
+
+## init()
+
+```python
+ag.init(
+    *,
+    agent_name: str | None = None,
+    enrollment_token: str | None = None,
+    provisioning_secret: str | None = None,
+    api_url: str | None = None,
+    bundle_poll_seconds: float = 30.0,
+    dlp: bool | DlpMode | Detector | None = None,
+    default_session_id: str = "default",
+) -> Governance
+```
+
+Bootstraps the process-wide `Governance` singleton. Idempotent — call it once at startup and forget it. All arguments fall back to the same env vars as `Governance.bootstrap()`.
+
+Registers an `atexit` hook that flushes audit events on normal process exit. Hard kills (SIGKILL, OOM) skip the hook — by design.
+
+Returns the underlying `Governance` instance if you need it (rarely).
+
+```python
+ag.init(agent_name="payments-bot")
+# AG_ENROLLMENT_TOKEN and AG_API_URL come from env.
+```
+
+## @tool
+
+```python
+@ag.tool                                 # use function name as tool name
+def delete_file(path: str) -> str: ...
+
+@ag.tool(name="custom_name")             # override tool name
+def list_files(path: str) -> list: ...
+
+@ag.tool                                 # async functions just work
+async def fetch_url(url: str) -> str: ...
+```
+
+The decorator runs `evaluate()` before invoking the function. If the policy denies the call:
+
+- The underlying function is **not** invoked.
+- A `GovernanceDeniedError` is raised. It's a `PermissionError` subclass; catch either.
+
+The function's positional arguments land in the audit event's `metadata.args`; keyword arguments in `metadata.kwargs`. Match those in your policies:
+
+```yaml
+- field: tool_name
+  operator: eq
+  value: delete_file
+- field: kwargs.path
+  operator: starts_with
+  value: "/etc/"
+```
+
+## session()
+
+```python
+with ag.session("conv-42"):
+    delete_file("/tmp/foo")  # audit row gets sessionId="conv-42"
+```
+
+Context manager that sets the session id for any `@ag.tool` calls inside the block. Falls back to `default_session_id` (default `"default"`) outside any scope.
+
+ContextVars under the hood — propagates across `await` points within the same task. Safe in async code and threadpools.
+
+## trace()
+
+```python
+with ag.session("conv-42"), ag.trace() as trace:
+    trace.append(ag.UserMessage(content="Delete /tmp/foo"))
+    trace.append(ag.AssistantMessage(content="On it."))
+    delete_file("/tmp/foo")  # trace uploaded with the audit event
+```
+
+Context manager that binds a [`TraceContext`](/sdk-python/trace) for tool calls in scope. Every governed call uploads the running transcript so the dashboard's drawer has the conversation behind each audit row.
+
+## evaluate()
+
+For ad-hoc evaluations outside a `@ag.tool`-decorated function:
+
+```python
+result = ag.evaluate(
+    "delete_file",
+    metadata=ag.EvaluationMetadata(input={"path": "/tmp/foo"}),
+)
+if result.decision == "deny":
+    raise PermissionError(result.reason)
+```
+
+Module-level shim around `gov.evaluate()`. Reads the singleton, the session ContextVar, and the trace ContextVar — pass explicit overrides only if you need to.
+
+## shutdown()
+
+```python
+ag.shutdown()
+```
+
+Stops the singleton and flushes in-flight audit events. Called automatically by the `atexit` hook on normal exit. Safe to call manually for explicit cleanup (tests, child-process forks).
+
+## Errors
+
+| Error | When |
+| --- | --- |
+| `ag.GovernanceNotInitializedError` | `@tool` or `evaluate()` called before `init()`. |
+| `ag.GovernanceDeniedError` | A policy denied a `@tool`-wrapped call. Has `.tool_name` and `.result` attributes. |
+| `ag.GovernanceProblemError` | Control-plane returned an RFC 9457 problem response (e.g. enrollment token revoked). |
+
+## When NOT to use the singleton
+
+- **Multiple agents in one process.** Use `Governance.bootstrap()` directly with a fresh instance per agent. The singleton supports exactly one identity at a time.
+- **Tests.** Pass an explicit `Governance(token_store=...)` so each test starts fresh.
+- **Library code.** A library shouldn't claim the process-wide singleton on its consumer's behalf. Accept a `Governance` instance via dependency injection instead.
+
+For the 99% case (one agent per process, application code), the decorator API is the right choice.

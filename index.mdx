@@ -44,15 +44,16 @@ The SDK is a thin Python library. The control plane is a self-hostable API + das
 ## Three lines of code
 
 ```python
-from agent_governance import Governance
+import agent_governance as ag
 
-with Governance.bootstrap(agent_name="payments-bot") as gov:
-    result = gov.evaluate("delete_file", session_id="s1")
-    if result.decision == "deny":
-        raise PermissionError(result.reason)
+ag.init(agent_name="payments-bot")  # once, at process startup
+
+@ag.tool
+def delete_file(path: str) -> str:
+    ...                              # raises GovernanceDeniedError if denied
 ```
 
-That's the whole integration. Set `AG_ENROLLMENT_TOKEN` once, drop those lines next to your tool dispatcher, and every call routes through your policy bundle.
+Set `AG_ENROLLMENT_TOKEN` once, sprinkle `@ag.tool` over your tool functions, and every call routes through your policy bundle. No `with` blocks, no manual `evaluate()` calls.
 
 ## Pick your adapter
 

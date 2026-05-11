@@ -44,20 +44,28 @@ poetry add 'agent-governance[mcp]'
 
 The `[mcp]` extra pulls in MCP. Use `[langchain]` or `[claude-agent]` for those frameworks. Without an extra you still get the core SDK — the adapters are just optional wrappers.
 
-## 3. Bootstrap and evaluate
+## 3. Bootstrap and decorate
 
 ```python quickstart.py
-from agent_governance import Governance
+import agent_governance as ag
 
-with Governance.bootstrap(agent_name="quickstart-bot") as gov:
-    gov.wait_until_ready(timeout=10.0)
-    print(f"loaded bundle v{gov.current_bundle.bundleVersion}")
+# One-time bootstrap. Reads AG_ENROLLMENT_TOKEN + AG_API_URL from env.
+ag.init(agent_name="quickstart-bot")
 
-    result = gov.evaluate("list_files", session_id="demo")
-    print(f"list_files → {result.decision}")  # allow
+@ag.tool
+def list_files(path: str) -> str:
+    return f"(would list {path})"
 
-    result = gov.evaluate("delete_file", session_id="demo")
-    print(f"delete_file → {result.decision}")  # allow (no policy yet)
+@ag.tool
+def delete_file(path: str) -> str:
+    return f"(would delete {path})"
+
+with ag.session("demo"):
+    print("list:", list_files("/tmp"))
+    try:
+        print("delete:", delete_file("/tmp/foo"))
+    except ag.GovernanceDeniedError as e:
+        print("delete blocked:", e)
 ```
 
 Run it:
@@ -90,7 +98,7 @@ spec:
           value: delete_file
 ```
 
-Within ~30 seconds the SDK's bundle poller picks up the new version and the next `evaluate("delete_file", …)` returns `deny`.
+Within ~30 seconds the SDK's bundle poller picks up the new version and the next `delete_file(...)` call raises `GovernanceDeniedError`.
 
 ## 5. Re-run and see the deny
 

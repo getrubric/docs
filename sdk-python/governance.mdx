@@ -1,6 +1,6 @@
 ---
 title: "Governance"
-description: "The entry point — bootstrap, lifecycle, properties."
+description: "The underlying class. Use the decorator API for most code."
 icon: "shield"
 ---
 
@@ -8,11 +8,15 @@ icon: "shield"
 from agent_governance import Governance
 ```
 
-`Governance` is the SDK's main class. You construct one at process startup, hold onto it for the life of the agent, and shut it down on exit. It owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader.
+`Governance` owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader. Most application code should use the [decorator API](/sdk-python/init) instead — `ag.init()` once, `@ag.tool` per function. Reach for `Governance` directly when you need:
+
+- **Multiple agents in one process.** The singleton supports one identity at a time; `Governance` instances are independent.
+- **Tests.** Construct a `Governance` per test for isolation.
+- **Library code.** Don't claim the process-wide singleton on a consumer's behalf — accept a `Governance` via dependency injection.
 
 ## `Governance.bootstrap(...)`
 
-Class method that builds a fully-initialized instance. The recommended construction path.
+Class method that builds a fully-initialized instance.
 
 ```python
 @classmethod

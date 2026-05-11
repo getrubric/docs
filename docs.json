@@ -59,6 +59,7 @@
           {
             "group": "Python",
             "pages": [
+              "sdk-python/init",
               "sdk-python/governance",
               "sdk-python/evaluate",
               "sdk-python/trace",
