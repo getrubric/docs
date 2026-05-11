@@ -26,13 +26,9 @@ A [SPIFFE-style](https://spiffe.io/) signed JWT with a few claims that matter:
 - **`exp`** — 60 minutes from issuance. The SDK auto-refreshes around the 50-minute mark.
 - **EdDSA-signed.** Signing key is per-org and stays inside the control plane. The public key is served at `/v1/identities/jwks` for verification.
 
-## Two ways to bootstrap
+## How the SDK bootstraps
 
-You pick one based on whether you're shipping one agent or a fleet.
-
-### Enrollment tokens (recommended for fleets)
-
-A long-lived, org-scoped, **register-only** credential. The SDK calls `POST /v1/identities/enroll` with the token and an `agentName`, and gets back a freshly-minted JWT.
+Enrollment is the only bootstrap path. The SDK presents a long-lived, org-scoped, **register-only** enrollment token plus an `agentName`, the control plane calls `POST /v1/identities/enroll`, and gets back a freshly-minted JWT.
 
 ```python
 from agent_governance import Governance
@@ -42,35 +38,28 @@ with Governance.bootstrap(agent_name="payments-bot") as gov:
     ...
 ```
 
-Properties:
+Or the decorator API:
+
+```python
+import agent_governance as ag
+
+ag.init(agent_name="payments-bot")
+```
+
+Properties of the enrollment flow:
 
 - **Idempotent on `agentName`** — the same `(orgId, agentName)` always resolves to the same `agent_identities` row. Restarts and redeploys don't pile up identities; only the JWT rotates.
-- **Register-only** — leaked enrollment token cannot ship audit events or read bundles. Worst case: an attacker creates new agent rows in your org. Bounded, auditable, revocable per-token.
+- **Register-only** — a leaked enrollment token cannot ship audit events or read bundles. Worst case: an attacker creates new agent rows in your org. Bounded, auditable, revocable per-token.
 - **Rate-limited** — each token has a `maxEnrollmentsPerHour` cap (default 60). Brute-force protection.
 - **Expires** — 90 days by default; renewable from the dashboard with a successor token.
 
-This is the right path for any runtime that ships > 1 agent. CI environments, multi-tenant agents, anything spawned dynamically.
-
-### Provisioning secrets (single agent)
-
-A one-time secret operator-issued in the dashboard. Consumed on first call, becomes invalid afterward.
-
-```python
-# AG_PROVISIONING_SECRET from env
-with Governance.bootstrap() as gov:
-    ...
-```
-
-Use this when:
-- You only have one agent.
-- You want explicit per-agent control over which agents exist.
-- You're doing a security demo and want to show the issuance flow.
+The trade-off is that brand-new enrolled agents start with no scoped policies — the SDK gets an empty bundle until an operator adds the agent to at least one policy's scope. See [Policies](/concepts/policies) for the scope model.
 
 ## Lifecycle
 
 <Steps>
   <Step title="Bootstrap">
-    SDK reads `AG_ENROLLMENT_TOKEN` (or secret) and calls `/v1/identities/enroll` (or `/exchange`). Server returns a JWT and the agent's stable id.
+    SDK reads `AG_ENROLLMENT_TOKEN` and `AG_AGENT_NAME`, calls `/v1/identities/enroll`. Server returns a JWT and the agent's stable id.
   </Step>
   <Step title="Auto-refresh">
     The SDK schedules a refresh at ~50 min into the token's lifetime, calling `/v1/identities/refresh` with the current JWT to get a fresh one. The agent never sees a 401.
@@ -95,9 +84,4 @@ Choose names that:
 
 ## Provenance
 
-Every identity record in the dashboard carries its source:
-
-- `enrolled · <tokenName>` — created via an enrollment token. Click through to the token that minted it.
-- `manual` — issued individually via a provisioning secret.
-
-This is your trail when you need to answer *"how did this agent get an identity?"* during an audit.
+Every identity is stamped with the enrollment token that minted it. The Enrollment page's per-token table shows the running count of agents enrolled, and revoking a token doesn't kill the identities it minted — their JWTs are signed by the org's signing key, not the token. To kill a specific agent, revoke its identity directly.

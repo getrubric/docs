@@ -4,19 +4,33 @@ description: "Every governed tool call, filterable, with traces."
 icon: "shield"
 ---
 
-The Audit log is the canonical record of every `evaluate()` call your fleet has made. It's where you go when you need to answer *"did agent X ever do Y?"* with cryptographic certainty.
+The Audit log is the canonical record of everything Rubric records: every `evaluate()` call your fleet has made **plus** every operator action that touched governed state (policy scope edits, manual incident opens, agent freezes). One unified ledger, one hash chain, one place to answer *"what happened in this org?"* with cryptographic certainty.
+
+## Tool calls vs config events
+
+Every row carries a `kind` discriminator. The two families differ in how they're rendered and what data they carry:
+
+| Kind | Origin | Decision pill | Click row |
+| --- | --- | --- | --- |
+| `tool_call` | SDK `evaluate()` | `allow` or the deny code | Opens the trace drawer. |
+| `policy.scope.added` / `policy.scope.removed` | Operator scope edit | `config` (orange) | No drawer — config events have no trace. |
+| `incident.manual_opened` | Operator opens an incident | `config` | No drawer. |
+| `agent.frozen` | Freeze via incident detail or agents page | `config` | No drawer. |
+
+All rows go through the same per-org hash chain, so tampering with a config row breaks the chain exactly the same way tampering with a decision row does. The chain integrity card on this page covers both kinds.
 
 ## The list
 
 Columns:
 
-- **Time** — when the call happened (your local timezone).
-- **Agent** — the agent's stable id (bound to the JWT `sub`).
-- **Tool** — the tool name passed to `evaluate()`.
-- **Decision** — `allow` (green pill) or the deny code (red pill).
-- **Latency** — how long the in-process evaluator took. Red on deny.
-- **Session** — first 8 chars of the session id (hover to see full).
-- **📄** — orange file icon if a trace is attached.
+- **#seq** — the row's position in the per-org hash chain.
+- **Time** — when the event happened (your local timezone).
+- **Agent** — the agent's stable id. For config rows, this is the agent the operator acted on.
+- **Tool / Action** — the tool name for `evaluate()` rows, or a human-readable action label for config rows (e.g. "Added agent to policy scope").
+- **Decision** — `allow` (green), the deny code (red), or `config` (orange) for non-decision rows.
+- **Latency** — for tool calls only; config rows show `—`.
+- **Session** — first 8 chars of the session id for tool calls; `—` for config rows.
+- **📄** — orange file icon if a trace is attached (tool calls only).
 
 ## Filters
 

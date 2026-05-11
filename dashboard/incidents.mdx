@@ -8,15 +8,33 @@ Rubric opens an **incident** automatically when something interesting happens. T
 
 ## What opens an incident
 
-Two triggers in the current build:
+Three triggers:
 
 | Trigger | When it fires | Severity |
 | --- | --- | --- |
 | **Deny spike** | An agent's deny count exceeds its rolling 1-hour baseline by N standard deviations. | `warning` (≥ 3σ) or `critical` (≥ 5σ). |
 | **Critical DLP** | A single tool call carries a `high`-severity DLP detection. | `critical`. |
-| **Manual** | An operator opens one explicitly. | Any. |
+| **Manual** | An operator opens one via **New incident**. | Operator-chosen. |
 
-When the trigger condition resolves (the rate drops, the call doesn't repeat), the incident auto-resolves after a stale window of 60 minutes.
+When the auto-triggers' conditions resolve (the rate drops, the call doesn't repeat), the incident auto-resolves after a stale window of 60 minutes.
+
+## Opening one manually
+
+Click **New incident** in the top-right. The modal asks for:
+
+- **Agent** — required. Single-select over the org's enrolled agents.
+- **Severity** — `warning` or `critical`. Pill toggle.
+- **Summary** — short free text. Becomes the incident title.
+- **Freeze this agent now** — optional checkbox. Tick it if the whole reason you're opening the incident is to stop the agent immediately.
+
+On submit:
+
+1. An incident row is inserted with `reason = 'manual'`, `status = 'open'`. **Idempotency:** if there's already an open or acknowledged incident for that agent, the modal returns the existing one rather than duplicating.
+2. The agent's recent denies (last hour, capped at 50) are auto-attached so the detail page opens with real evidence, not an empty shell.
+3. If **Freeze this agent now** was checked, the agent's status flips to `frozen` and the per-agent bundles for that agent are rebuilt without the active policies — the SDK stops issuing tool calls on its next ≤30 s pull.
+4. One `incident.manual_opened` audit row is written. If the agent was frozen, an `agent.frozen` row follows. Both ride the unified hash chain.
+
+You land on `/incidents/[id]` to keep working.
 
 ## Triage UI
 

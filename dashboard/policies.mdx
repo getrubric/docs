@@ -4,7 +4,9 @@ description: "Author, version, dry-run, publish."
 icon: "file-shield"
 ---
 
-The Policies page lists every policy in your org as a card. Each card shows the policy name, slug, applied tags, an "Active" or "Draft" status pill, and a 24h activity sparkline.
+The Policies page lists every policy in your org as a card. Each card shows the policy name, slug, a **Recently active on** chip strip (agents that hit this policy in the last 30 days), an "Active" or "Draft" status pill, and a 24h activity sparkline.
+
+The chip strip is **observational** — it shows actual traffic, not the prescriptive scope. The prescriptive list (the set of agents the policy *currently enforces against*) lives on the detail page.
 
 ## Authoring
 
@@ -13,6 +15,8 @@ Click **New policy** to open the YAML editor. The editor:
 - Validates against the [Policy schema](/concepts/policies) on every keystroke. Errors are highlighted inline.
 - Autocompletes condition fields, operators, and values for known tools.
 - Shows a live diff against the currently-published version on the right.
+
+The form has three required sections: name, slug, and **Applied to agents** (a multi-select picker over the org's enrolled agents). You can save a draft with zero agents selected, but you can't publish until at least one is picked — empty scope means the policy enforces against nobody.
 
 When you click **Save**, a new `policy_version` is created with status `draft`.
 
@@ -46,9 +50,22 @@ Click **Publish** to make a draft version active. Effects:
 1. The previous active version becomes `archived`.
 2. The new version becomes `active`.
 3. The bundle version increments.
-4. SDKs see the new bundle on their next 30-second poll.
+4. The control plane fans out fresh per-agent bundles for every agent in the org (each agent's bundle is the intersection of the new active policies with that agent's scope membership).
+5. SDKs see the new bundle on their next 30-second poll.
+
+**The publish button is disabled when no agents are in scope.** Add at least one agent on the **Applied to agents** card before publishing; the API mirrors this and rejects with RFC 9457 `policy-empty-scope` otherwise.
 
 You can roll back by editing the policy and choosing **Publish previous version** from the version list.
+
+## Detail page: Applied to agents
+
+The detail page has a dedicated **Applied to agents** card above the version list:
+
+- Shows the currently-scoped agents as chips (agent name fallback agent id).
+- Banner reads *"Inert — no agents assigned. Add at least one to enforce."* when the policy is published but scope is empty.
+- Click **Edit** to open the agent picker dialog. Save persists via `PUT /v1/policies/:id/scope`, writes one audit row per add/remove (`kind = 'policy.scope.added'` / `'policy.scope.removed'`), and fans out per-agent bundle rebuilds for affected agents only — no version bump, no SDK restart, takes effect on the next ≤30 s pull.
+
+Scope is independent of policy versions. Editing scope doesn't produce a new draft; it's operational metadata.
 
 ## Pushing from CI
 
@@ -62,18 +79,6 @@ curl -X POST $RUBRIC_API/v1/policies \
 ```
 
 See the [Policies API endpoint](/api-reference/introduction) for the full schema. The dashboard's editor and the API write to the same `policy_versions` table — you can author in either and both see each other's history.
-
-## Scope (which agents see which policies)
-
-Policies are global to the org by default. To scope to a subset, add a condition matching agent metadata:
-
-```yaml
-- field: agent_environment
-  operator: eq
-  value: prod
-```
-
-The dashboard's policy card shows which **applied tags** matched the policy in the last 30 days, so you can see at a glance which agents this policy is actually affecting.
 
 ## Status pill
 

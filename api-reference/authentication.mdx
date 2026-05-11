@@ -16,7 +16,7 @@ What the agent uses to ship audit events, pull bundles, upload traces.
 Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6Ii4uLiJ9...
 ```
 
-**Issued by:** `POST /v1/identities/enroll` or `POST /v1/identities/exchange`.
+**Issued by:** `POST /v1/identities/enroll`.
 
 **Lifetime:** 60 minutes. The SDK auto-refreshes via `POST /v1/identities/refresh` around the 50-minute mark.
 

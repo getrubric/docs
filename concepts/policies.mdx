@@ -92,24 +92,30 @@ Before publishing, click **Dry-run** in the editor. The control plane replays th
 
 Always dry-run a deny rule before shipping it. The audit replay catches over-broad matchers cheaply.
 
-## Scope (matching agents to policies)
+## Scope: which agents does this policy enforce against?
 
-Policies are global to the org by default. To scope to a subset of agents, add a condition matching agent metadata:
+Scope is **prescriptive and operator-controlled**. Every policy carries an explicit list of agents it enforces against, stored separately from the YAML. The list is editable on the policy detail page and required at publish time.
 
-```yaml
-rules:
-  - id: prod-only-deny
-    effect: deny
-    conditions:
-      - field: tool_name
-        operator: eq
-        value: delete_file
-      - field: agent_environment
-        operator: eq
-        value: prod
-```
+| State | Meaning | SDK behavior |
+| --- | --- | --- |
+| Empty scope | Policy applies to **no agents**. | Bundle build excludes the policy from every per-agent slice. The policy is inert. |
+| ≥ 1 agent | Policy applies only to the listed agents. | Each scoped agent's bundle includes the policy. Unscoped agents don't see it. |
 
-`agent_environment` is filled in by the control plane based on the agent's registered metadata.
+This is **explicit opt-in by design**. A newly-enrolled agent is unpoliced until an operator scopes a policy onto it — the cost of accidentally leaving a policy off one agent was judged lower than the cost of an over-broad policy quietly enforcing somewhere unintended.
+
+### How it ships
+
+- Scope lives in a `policy_agents` join table — it is **not** part of the policy YAML. Forking a template never carries scope across orgs; the fork prompts the operator for fresh agent selection.
+- The bundle pull endpoint is per-agent. Each `(orgId, agentRowId, bundleVersion)` produces a deterministic, hashed manifest. Editing scope on a published policy fans out fresh per-agent bundles to the affected agents only — no version bump, no SDK restart.
+- Scope edits are logged to the audit ledger with `kind = 'policy.scope.added'` or `'policy.scope.removed'`. They ride the same hash chain as tool-call decisions, so config tampering is as detectable as decision tampering.
+
+### Required at publish
+
+`POST /v1/policies/:id/publish` rejects with RFC 9457 problem `policy-empty-scope` if no agents are scoped. The dashboard mirrors this by disabling the publish button until you pick at least one agent. Drafts are allowed to have empty scope — they're not in the bundle anyway.
+
+### Filtering rule logic by agent metadata
+
+Conditions like `agent_environment eq prod` still work for narrowing **which calls inside a scoped agent** match a rule. They're orthogonal to scope: scope picks which agents see the policy; conditions pick which calls within those agents trigger which effect.
 
 ## Default-allow vs default-deny
 
