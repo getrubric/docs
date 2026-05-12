@@ -6,6 +6,6 @@
     <line x1="20" y1="40" x2="80" y2="40"></line>
     <line x1="20" y1="60" x2="80" y2="60"></line>
   </g>
-  <rect x="40" y="40" width="20" height="20" fill="#FB923C"></rect>
+  <rect x="40" y="40" width="20" height="20" fill="#F94B0E"></rect>
   <text x="105" y="64" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="40" letter-spacing="-1" fill="#f4f5f7">Rubric</text>
 </svg>

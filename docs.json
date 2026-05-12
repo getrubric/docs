@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "Rubric",
   "colors": {
-    "primary": "#FB923C",
-    "light": "#FDBA74",
-    "dark": "#EA580C"
+    "primary": "#F94B0E",
+    "light": "#FF7A4F",
+    "dark": "#D43E07"
   },
   "favicon": "/favicon.svg",
   "navigation": {
