@@ -68,30 +68,6 @@
             ]
           }
         ]
-      },
-      {
-        "tab": "API reference",
-        "groups": [
-          {
-            "group": "Overview",
-            "pages": [
-              "api-reference/introduction",
-              "api-reference/authentication",
-              "api-reference/errors"
-            ]
-          },
-          {
-            "group": "Endpoints",
-            "pages": [
-              "api-reference/identities-enroll",
-              "api-reference/identities-refresh",
-              "api-reference/bundle",
-              "api-reference/events",
-              "api-reference/traces",
-              "api-reference/audit"
-            ]
-          }
-        ]
       }
     ]
   },

@@ -26,7 +26,6 @@ Opens at `http://localhost:3000`.
 ├── adapters/                  # MCP, Claude Agent, LangChain
 ├── dashboard/                 # Per-page documentation
 ├── sdk-python/                # Python SDK reference
-├── api-reference/             # REST API per-endpoint pages
 └── logo/                      # Light + dark wordmark SVGs
 ```
 
