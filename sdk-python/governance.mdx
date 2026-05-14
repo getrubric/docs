@@ -8,7 +8,7 @@ icon: "shield"
 from rubric import Governance
 ```
 
-`Governance` owns the JWT-SVID, the bundle cache, the audit sink, and the trace uploader. Most application code should use the [decorator API](/sdk-python/init) instead — `rubric.init()` once, `@rubric.tool` per function. Reach for `Governance` directly when you need:
+`Governance` owns the agent's signed identity, the bundle cache, the audit sink, and the trace uploader. Most application code should use the [decorator API](/sdk-python/init) instead — `rubric.init()` once, `@rubric.tool` per function. Reach for `Governance` directly when you need:
 
 - **Multiple agents in one process.** The singleton supports one identity at a time; `Governance` instances are independent.
 - **Tests.** Construct a `Governance` per test for isolation.
@@ -38,7 +38,7 @@ def bootstrap(
 | --- | --- | --- | --- |
 | `enrollment_token` | `str \| None` | `AG_ENROLLMENT_TOKEN` env | **Required.** Long-lived org token. Mint one in **Enrollment**. |
 | `agent_name` | `str \| None` | `AG_AGENT_NAME` env | **Required.** Stable name → stable identity. Same name across restarts reuses the same identity row. |
-| `api_url` | `str \| None` | `AG_API_URL` env, or `http://localhost:3001` | Control plane URL. |
+| `api_url` | `str \| None` | `AG_API_URL` env | The Rubric API URL we gave you during onboarding. |
 | `bundle_poll_seconds` | `float` | `30.0` | How often to poll for new bundle versions. |
 | `autostart` | `bool` | `True` | Start the audit sink and bundle poller immediately. |
 | `dlp` | `bool \| DlpMode \| Detector \| None` | `AG_DLP` env or `None` | DLP detector. See [DLP](/concepts/dlp). |
@@ -122,7 +122,7 @@ from rubric import Governance
 from rubric.identity import TokenStore
 
 store = TokenStore(...)  # already initialized
-gov = Governance(token_store=store, api_url="http://localhost:3001")
+gov = Governance(token_store=store, api_url="https://api.your-rubric-url.example.com")
 ```
 
 Reserve this for tests. In application code, always use `bootstrap()`.

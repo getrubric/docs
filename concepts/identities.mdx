@@ -1,34 +1,23 @@
 ---
 title: "Identities & enrollment"
-description: "Per-agent JWT-SVIDs, enrollment tokens, and how the SDK self-bootstraps."
+description: "Per-agent signed identities, enrollment tokens, and how the SDK self-bootstraps."
 icon: "id-card"
 ---
 
-Every governed agent has its own cryptographic identity — a short-lived JWT-SVID issued by the control plane, bound to a stable `agentId`. The SDK obtains and refreshes it automatically. You don't write any of this code yourself.
+Every governed agent has its own cryptographic identity — a short-lived, signed token issued by the control plane, bound to a stable `agentId`. The SDK obtains and refreshes it automatically. You don't write any of this code yourself.
 
-## What's a JWT-SVID?
+## What the identity gives you
 
-A [SPIFFE-style](https://spiffe.io/) signed JWT with a few claims that matter:
+The signed identity is a 60-minute token that the SDK presents on every call to the control plane. Two properties matter:
 
-```json
-{
-  "iss": "https://api.rubric.dev/v1",
-  "aud": "rubric",
-  "sub": "payments-bot",
-  "org": "6acf0ca4-4453-4026-bc22-d0f316e1beb8",
-  "identity_id": "...",
-  "iat": 1715361600,
-  "exp": 1715365200
-}
-```
+- **Stable agent id.** Audit ingest, trace upload, and bundle reads all assert the agent id against the body of the request — an agent can only ship attribution for itself. There is no way to forge another agent's events.
+- **Auto-rotating.** The SDK refreshes the token ahead of expiry. Your code never sees an auth error from a normal expiry.
 
-- **`sub`** — the agent's stable id. Audit ingest, trace upload, and bundle reads all assert this claim against the body.
-- **`exp`** — 60 minutes from issuance. The SDK auto-refreshes around the 50-minute mark.
-- **EdDSA-signed.** Signing key is per-org and stays inside the control plane. The public key is served at `/v1/identities/jwks` for verification.
+The signing key is owned by the control plane. Your agents never see it.
 
 ## How the SDK bootstraps
 
-Enrollment is the only bootstrap path. The SDK presents a long-lived, org-scoped, **register-only** enrollment token plus an `agentName`, the control plane calls `POST /v1/identities/enroll`, and gets back a freshly-minted JWT.
+Enrollment is the only bootstrap path. You mint a long-lived, **register-only** enrollment token in the dashboard and drop it into your agent process as an environment variable. On startup the SDK presents the token plus an `agentName`, and the control plane mints a fresh signed identity for that agent.
 
 ```python
 from rubric import Governance
@@ -48,40 +37,40 @@ rubric.init(agent_name="payments-bot")
 
 Properties of the enrollment flow:
 
-- **Idempotent on `agentName`** — the same `(orgId, agentName)` always resolves to the same `agent_identities` row. Restarts and redeploys don't pile up identities; only the JWT rotates.
+- **Idempotent on `agentName`** — the same `(org, agentName)` always resolves to the same agent identity. Restarts and redeploys don't pile up identities; only the short-lived signed token rotates.
 - **Register-only** — a leaked enrollment token cannot ship audit events or read bundles. Worst case: an attacker creates new agent rows in your org. Bounded, auditable, revocable per-token.
 - **Rate-limited** — each token has a `maxEnrollmentsPerHour` cap (default 60). Brute-force protection.
 - **Expires** — 90 days by default; renewable from the dashboard with a successor token.
 
-The trade-off is that brand-new enrolled agents start with no scoped policies — the SDK gets an empty bundle until an operator adds the agent to at least one policy's scope. See [Policies](/concepts/policies) for the scope model.
+A brand-new enrolled agent starts with no scoped policies — the SDK gets an empty bundle until an operator adds the agent to at least one policy's scope. See [Policies](/concepts/policies) for the scope model.
 
 ## Lifecycle
 
 <Steps>
   <Step title="Bootstrap">
-    SDK reads `AG_ENROLLMENT_TOKEN` and `AG_AGENT_NAME`, calls `/v1/identities/enroll`. Server returns a JWT and the agent's stable id.
+    SDK reads `AG_ENROLLMENT_TOKEN` and `AG_AGENT_NAME` from env, exchanges them for a freshly-minted signed identity.
   </Step>
   <Step title="Auto-refresh">
-    The SDK schedules a refresh at ~50 min into the token's lifetime, calling `/v1/identities/refresh` with the current JWT to get a fresh one. The agent never sees a 401.
+    The SDK schedules a refresh at ~50 min into the token's lifetime. The agent never sees an auth error from a normal expiry.
   </Step>
   <Step title="Revocation">
-    Operator clicks **Revoke** on an identity in the dashboard. The current JWT keeps working until expiry (max 60 min). New refresh attempts return 401. New enrollment for the same `agentName` returns 403 — operator must un-revoke or rename.
+    Operator clicks **Revoke** on an identity in the dashboard. The current token keeps working until expiry (max 60 min). Refresh attempts and new enrollments for the same `agentName` are rejected — operator must un-revoke or rename.
   </Step>
   <Step title="Process exit">
-    `Governance.shutdown()` (or the `with` block exiting) stops the refresh thread. Next process boot re-enrolls and resumes with a fresh JWT against the same identity row.
+    `Governance.shutdown()` (or the `with` block exiting) stops the refresh thread. Next process boot re-enrolls and resumes against the same identity.
   </Step>
 </Steps>
 
 ## Naming
 
-`agentName` is what you pass to `bootstrap(agent_name=…)`. The control plane normalizes this into the agent's stable `agentId` (lowercase, dash-separated, max 128 chars).
+`agentName` is what you pass to `bootstrap(agent_name=…)`. The control plane normalizes it into the agent's stable id (lowercase, dash-separated, max 128 chars).
 
 Choose names that:
 
 - **Identify the role**, not the host. `payments-bot`, `customer-support-router` — not `agent-prod-us-east-1c`.
-- **Survive redeployment.** The whole point of the idempotent enrollment is that `payments-bot` v2 inherits v1's identity.
+- **Survive redeployment.** The whole point of idempotent enrollment is that `payments-bot` v2 inherits v1's identity.
 - **Differ across environments.** Use a suffix or a separate org per environment: `payments-bot-stage` vs `payments-bot-prod`.
 
 ## Provenance
 
-Every identity is stamped with the enrollment token that minted it. The Enrollment page's per-token table shows the running count of agents enrolled, and revoking a token doesn't kill the identities it minted — their JWTs are signed by the org's signing key, not the token. To kill a specific agent, revoke its identity directly.
+Every identity is stamped with the enrollment token that minted it. The Enrollment page's per-token table shows the running count of agents enrolled, and revoking a token doesn't kill the identities it minted — those signed tokens are independent. To kill a specific agent, revoke its identity directly.

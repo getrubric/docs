@@ -7,12 +7,12 @@ icon: "rocket"
 This walkthrough takes you from zero to a denied tool call landing in your dashboard. By the end you'll have:
 
 - An enrollment token so your code can self-bootstrap.
-- An agent registered against your org with its own JWT-SVID.
+- An agent registered against your org with its own signed identity.
 - A policy denying `delete_file` published as a bundle.
 - An audit event in the dashboard for the denied call, with the full trace attached.
 
 <Note>
-You need a running Rubric control plane. For local development, follow [Installation](/guides/installation) first. The rest of this page assumes the API is reachable at `http://localhost:3001` and the dashboard at `http://localhost:3000`.
+This page assumes you've already been onboarded onto Rubric and your operator gave you the API URL plus a dashboard URL. If you haven't installed the SDK yet, do [Installation](/guides/installation) first.
 </Note>
 
 ## 1. Issue an enrollment token
@@ -22,7 +22,7 @@ Open the dashboard, go to **Enrollment** in the sidebar, and click **Create toke
 ```bash
 export AG_ENROLLMENT_TOKEN=enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
 export AG_AGENT_NAME=quickstart-bot
-export AG_API_URL=http://localhost:3001
+export AG_API_URL=https://api.your-rubric-url.example.com
 ```
 
 Enrollment tokens are long-lived, org-scoped, and **register-only** — they cannot ship audit events or read bundles. The blast radius if leaked is bounded ("attacker can create new agent rows in this org") and revocable per-token from the dashboard.

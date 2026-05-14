@@ -56,7 +56,7 @@ If the trace was never attached (or the trace blob is missing), the drawer shows
 
 Always, in production agents. The cost is small and the operational value is large:
 
-- **Cost.** One extra `POST /v1/traces` per `evaluate()` (2–5ms in parallel with the audit batch). Storage: a few KB per call, kept for 30 days.
+- **Cost.** One extra trace upload per `evaluate()` (2–5ms in parallel with the audit batch). Storage: a few KB per call, kept for 30 days.
 - **Value.** When a deny happens at 3 AM, you want to know *why the model wanted to do it*. The trace is your only evidence.
 
 You can omit `trace=` for low-stakes paths (synthetic load tests, throwaway batch jobs).
@@ -78,7 +78,7 @@ If you're using the [Claude Agent adapter](/adapters/claude-agent), the adapter 
 
 Traces include user messages — which may contain PII. Two protections:
 
-1. **Per-org isolation.** Trace blobs are stored with the org_id and only readable through the dashboard's clerk-authenticated endpoints. They are not served on the SDK-direction routes.
-2. **DLP redaction (opt-in).** When DLP is enabled, the trace upload endpoint redacts detected secrets/PII before persisting. The full unredacted trace never touches disk.
+1. **Per-org isolation.** Trace blobs are scoped to your workspace and only readable by signed-in operators through your dashboard. There is no other access path.
+2. **DLP redaction (opt-in).** When DLP is enabled, the control plane redacts detected secrets/PII before persisting. The full unredacted trace never touches disk.
 
 For especially sensitive domains, you can disable trace upload entirely by never passing `trace=` to `evaluate()`. You'll keep the audit log; you'll lose the conversational context.

@@ -18,7 +18,7 @@ Click **New policy** to open the YAML editor. The editor:
 
 The form has three required sections: name, slug, and **Applied to agents** (a multi-select picker over the org's enrolled agents). You can save a draft with zero agents selected, but you can't publish until at least one is picked — empty scope means the policy enforces against nobody.
 
-When you click **Save**, a new `policy_version` is created with status `draft`.
+When you click **Save**, a new version is created with status `draft`.
 
 ## Templates
 
@@ -53,7 +53,7 @@ Click **Publish** to make a draft version active. Effects:
 4. The control plane fans out fresh per-agent bundles for every agent in the org (each agent's bundle is the intersection of the new active policies with that agent's scope membership).
 5. SDKs see the new bundle on their next 30-second poll.
 
-**The publish button is disabled when no agents are in scope.** Add at least one agent on the **Applied to agents** card before publishing; the API mirrors this and rejects with RFC 9457 `policy-empty-scope` otherwise.
+**The publish button is disabled when no agents are in scope.** Add at least one agent on the **Applied to agents** card before publishing.
 
 You can roll back by editing the policy and choosing **Publish previous version** from the version list.
 
@@ -63,22 +63,9 @@ The detail page has a dedicated **Applied to agents** card above the version lis
 
 - Shows the currently-scoped agents as chips (agent name fallback agent id).
 - Banner reads *"Inert — no agents assigned. Add at least one to enforce."* when the policy is published but scope is empty.
-- Click **Edit** to open the agent picker dialog. Save persists via `PUT /v1/policies/:id/scope`, writes one audit row per add/remove (`kind = 'policy.scope.added'` / `'policy.scope.removed'`), and fans out per-agent bundle rebuilds for affected agents only — no version bump, no SDK restart, takes effect on the next ≤30 s pull.
+- Click **Edit** to open the agent picker dialog. Saving writes one audit row per add/remove and fans out fresh bundles to the affected agents only — no version bump, no SDK restart, takes effect on the next ≤30 s pull.
 
 Scope is independent of policy versions. Editing scope doesn't produce a new draft; it's operational metadata.
-
-## Pushing from CI
-
-Policies can be pushed via the API too — a typical pattern is to keep YAML files in your application repo and apply them on merge:
-
-```bash
-curl -X POST $RUBRIC_API/v1/policies \
-  -H "Authorization: Bearer $CLERK_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d @policies/deny-destructive-fs.json
-```
-
-The dashboard's editor and the API write to the same `policy_versions` table — you can author in either and both see each other's history.
 
 ## Status pill
 

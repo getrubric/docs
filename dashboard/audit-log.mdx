@@ -8,25 +8,23 @@ The Audit log is the canonical record of everything Rubric records: every `evalu
 
 ## Tool calls vs config events
 
-Every row carries a `kind` discriminator. The two families differ in how they're rendered and what data they carry:
+Every row is either a **tool call** (an `evaluate()` from the SDK) or a **config event** (an operator action like editing scope, opening an incident, or freezing an agent). They're rendered differently:
 
-| Kind | Origin | Decision pill | Click row |
+| Family | Origin | Decision pill | Click row |
 | --- | --- | --- | --- |
-| `tool_call` | SDK `evaluate()` | `allow` or the deny code | Opens the trace drawer. |
-| `policy.scope.added` / `policy.scope.removed` | Operator scope edit | `config` (orange) | No drawer — config events have no trace. |
-| `incident.manual_opened` | Operator opens an incident | `config` | No drawer. |
-| `agent.frozen` | Freeze via incident detail or agents page | `config` | No drawer. |
+| Tool call | SDK `evaluate()` | `allow` or the deny code | Opens the trace drawer. |
+| Config event | Operator action in the dashboard | `config` (orange) | No drawer — config events have no trace. |
 
-All rows go through the same per-org hash chain, so tampering with a config row breaks the chain exactly the same way tampering with a decision row does. The chain integrity card on this page covers both kinds.
+All rows are written to the same tamper-evident chain, so any tampering with a config row is as detectable as tampering with a decision row. The chain-integrity card on this page covers both kinds.
 
 ## The list
 
 Columns:
 
-- **#seq** — the row's position in the per-org hash chain.
+- **#seq** — the row's position in the tamper-evident chain.
 - **Time** — when the event happened (your local timezone).
 - **Agent** — the agent's stable id. For config rows, this is the agent the operator acted on.
-- **Tool / Action** — the tool name for `evaluate()` rows, or a human-readable action label for config rows (e.g. "Added agent to policy scope").
+- **Tool / Action** — the tool name for tool-call rows, or a human-readable action label for config rows (e.g. "Added agent to policy scope").
 - **Decision** — `allow` (green), the deny code (red), or `config` (orange) for non-decision rows.
 - **Latency** — for tool calls only; config rows show `—`.
 - **Session** — first 8 chars of the session id for tool calls; `—` for config rows.
@@ -53,10 +51,8 @@ If the row has no trace (the icon column is empty), the drawer shows a friendly 
 
 ## Performance
 
-The audit log is indexed on `(orgId, ts desc)`, `(orgId, toolName, ts desc)`, and `(orgId, decision, ts desc)`. Queries through these indexes return in single-digit milliseconds even with millions of rows.
-
-If you need a different filter combination — e.g., by `sessionId` or by `policyId` — file an issue and we'll add an index.
+Filtering by time, tool name, decision, or any combination is fast even at millions of rows. If you have a filter combination that feels slow (e.g., by `sessionId` or by `policyId`), file an issue and we'll tune the index.
 
 ## Export
 
-The export button (top-right) is a placeholder in the current build. To export programmatically, hit the `GET /v1/audit` endpoint with your filters and paginate via cursors.
+The export button (top-right) is a placeholder in the current build. CSV export is coming soon — for now, use the in-page filters and copy.

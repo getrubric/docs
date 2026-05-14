@@ -2,7 +2,7 @@
 
 Documentation for Rubric — runtime governance for AI agents. Built with [Mintlify](https://mintlify.com).
 
-Live at: https://docs.rubric.dev (or wherever you've deployed)
+Live at: https://docs.rubric-app.com
 
 ## Local preview
 

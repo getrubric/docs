@@ -19,7 +19,7 @@ Submit and you'll see a **one-time reveal panel** with the full `enr_<prefix>.<s
 ```bash
 export AG_ENROLLMENT_TOKEN=enr_a9f3db48e559.zTYwPTZvvelFZ7IHXICT29jwO14UWUM1IcaAg7Ne7ts
 export AG_AGENT_NAME=my-bot
-export AG_API_URL=http://localhost:3001
+export AG_API_URL=https://api.your-rubric-url.example.com
 ```
 
 ```python
@@ -61,8 +61,8 @@ Typical flow:
 
 Click **Revoke** on a row. Effects:
 
-- Sets `revoked_at = now()`. Future `/enroll` calls with this token return `401 invalid_identity`.
-- Existing agent identities created via this token **continue to work** — their JWTs are independent of the enrollment token. You revoke individual identities separately.
+- Marks the token revoked. Future bootstrap attempts with this token are rejected.
+- Existing agent identities created via this token **continue to work** — their signed tokens are independent of the enrollment token. You revoke individual identities separately.
 
 To kill both the token *and* every agent it enrolled, use **Bulk revoke** (placeholder in the current build; coming soon).
 
@@ -70,8 +70,8 @@ To kill both the token *and* every agent it enrolled, use **Bulk revoke** (place
 
 Enrollment tokens are **register-only**:
 
-- They cannot ship audit events (those need a JWT-SVID, which only the enroll endpoint mints).
+- They cannot ship audit events (those require a signed agent identity, which only the bootstrap flow mints).
 - They cannot read bundles.
-- They cannot impersonate existing agents — the only thing they can do is create new agent rows in your org and get a JWT for those new rows.
+- They cannot impersonate existing agents — the only thing they can do is create new agent records in your org and get a signed identity for those.
 
 The blast radius if leaked is bounded, auditable (every enrollment is logged with the token id), and revocable per-token. This is by design — see [Identities & enrollment](/concepts/identities) for the full trust model.

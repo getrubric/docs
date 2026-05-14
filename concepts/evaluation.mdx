@@ -34,10 +34,10 @@ if result.decision == "deny":
     The SDK packs `{ ts, agentId, sessionId, toolName, decision, policyId, policyVersion, latencyMs, metadata, traceId? }`. Deny code and reason go into `metadata.denyCode` / `metadata.denyReason`. DLP detection goes into `metadata.dlp`.
   </Step>
   <Step title="Upload trace (if attached)">
-    If a `TraceContext` was passed, the SDK appends a `ToolCallMessage` and uploads the running messages array to `/v1/traces`. The returned `traceId` and position are attached to the audit event.
+    If a `TraceContext` was passed, the SDK appends a `ToolCallMessage` and uploads the running messages array to the control plane. The returned `traceId` and position are attached to the audit event.
   </Step>
   <Step title="Enqueue audit event">
-    The event goes into the audit sink's in-memory queue. The flush thread batches up to 100 events or 1 second of latency and POSTs to `/v1/events`. **Your code does not wait on the network.**
+    The event goes into the audit sink's in-memory queue. The flush thread batches up to 100 events or 1 second of latency and ships them to the control plane. **Your code does not wait on the network.**
   </Step>
   <Step title="Return EvaluationResult">
     `result.decision`, `result.reason`, `result.code`, `result.matchedPolicyId`, `result.matchedRuleId`, `result.latencyMs` are returned synchronously.

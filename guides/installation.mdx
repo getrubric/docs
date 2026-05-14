@@ -4,7 +4,7 @@ description: "Install the SDK in your agent project and point it at your Rubric 
 icon: "download"
 ---
 
-The SDK is what lives in your agent process. You install it as a regular Python package and point it at the URL of your Rubric control plane (the API + dashboard your operators use).
+The SDK is what lives in your agent process. You install it as a regular Python package and point it at the Rubric API URL we gave you.
 
 ## SDK
 
@@ -45,10 +45,10 @@ The SDK reads its configuration from environment variables:
 ```bash
 export AG_ENROLLMENT_TOKEN=enr_…       # mint one in the dashboard's Enrollment page
 export AG_AGENT_NAME=my-bot            # stable per-agent name
-export AG_API_URL=https://api.rubric.example.com   # your control plane URL
+export AG_API_URL=https://api.your-rubric-url.example.com   # the URL we gave you
 ```
 
-`AG_API_URL` defaults to `http://localhost:3001`, which works if your control plane is reachable on the same machine. In any other deployment, point this at your control plane's API hostname.
+`AG_API_URL` is the Rubric API URL you received during onboarding. Set it in your deployment's secret manager alongside the enrollment token.
 
 ## Verify
 

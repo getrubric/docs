@@ -11,7 +11,7 @@ The Agents page is your fleet view. Every agent that has ever shipped an audit e
 Columns:
 
 - **#** — risk rank (01 = highest risk).
-- **Agent** — name and stable id (the value bound to the JWT's `sub` claim).
+- **Agent** — name and stable id (the value bound to the agent's signed identity).
 - **Framework** — `mcp`, `claude-agent`, `langchain`, or `python` (raw SDK).
 - **Env** — `dev`, `stage`, `prod`, or `unknown`. Set from the agent's metadata.
 - **Owner** — `owned` or `unowned`. Assign in the agent detail page.
@@ -25,7 +25,7 @@ Click any row to open the agent's detail page.
 
 Tabs and sections:
 
-- **Identities** — every JWT-SVID issued for this agent, with status (active/revoked) and provenance (`enrolled · <token>` or `manual`). Issue or revoke from here.
+- **Identities** — every signed identity issued for this agent, with status (active/revoked) and provenance (`enrolled · <token>` or `manual`). Issue or revoke from here.
 - **Activity** — full timeseries chart for the agent. Allow vs deny.
 - **Top tools** — which tools this agent calls most.
 - **Recent events** — table of recent audit events. Click a row for the trace drawer.
@@ -33,7 +33,7 @@ Tabs and sections:
 
 ## Registering agents
 
-Agents are usually registered automatically — the SDK calls `/v1/identities/enroll` (or `/exchange`) on bootstrap and the control plane creates the agent row idempotently. **You rarely need to register agents manually.**
+Agents are usually registered automatically — the SDK enrolls on first boot and the control plane creates the agent record idempotently. **You rarely need to register agents manually.**
 
 If you want to pre-create rows (e.g., to reserve a name or assign an owner before the SDK boots), click **Register agent** in the top-right of the Agents page.
 
@@ -62,7 +62,7 @@ Risk decays over time. An agent that goes quiet for a few hours drops back towar
 Click **Edit** on an agent's detail page → set **Status** to `frozen`. Effects:
 
 1. The agent's identity is marked frozen; the next refresh attempt is rejected.
-2. The current JWT remains valid until expiry (≤ 60 min).
+2. The current signed token remains valid until expiry (≤ 60 min).
 3. New audit events from this agent are still logged but the dashboard shows them with a "frozen" tag.
 
-To **immediately** stop an agent, revoke its identity (Identities → Revoke). The current JWT is still cryptographically valid until expiry, but you can pair revocation with a kill-switch in your harness if you need stronger guarantees.
+To **immediately** stop an agent, revoke its identity (Identities → Revoke). The current token is still cryptographically valid until expiry, but you can pair revocation with a kill-switch in your harness if you need stronger guarantees.

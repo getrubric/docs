@@ -1,25 +1,24 @@
 ---
 title: "Architecture"
-description: "How the SDK, control plane, and your agent runtime fit together."
+description: "How the SDK and the Rubric control plane fit together."
 icon: "diagram-project"
 ---
 
-Rubric is split into three pieces with crisp boundaries:
+Rubric is split into two pieces: the **SDK** that runs in your agent process, and the **control plane** we host for you. They talk over HTTPS — the SDK pulls policy bundles and ships audit events; the control plane stores policies, ingests audit events, and serves the dashboard.
 
 ```
-┌────────────────────────┐  bundle pull (every 30s)  ┌─────────────────┐
-│  Your agent process    │ ─────────────────────────►│                 │
-│  ┌──────────────────┐  │                           │  Control plane  │
-│  │ Rubric SDK       │  │  audit events (batched)   │  (Fastify API)  │
-│  │  - evaluator     │  │ ─────────────────────────►│                 │
-│  │  - bundle cache  │  │                           │  ┌───────────┐  │
-│  │  - audit sink    │  │  trace upload (per call)  │  │ Postgres  │  │
-│  │  - trace upload  │  │ ─────────────────────────►│  └───────────┘  │
-│  └──────────────────┘  │                           │                 │
-│         ▲              │  JWT-SVID exchange/refresh│  Dashboard      │
-│         │              │ ◄─────────────────────────│  (Next.js)      │
-│         │ in-process   │                           │                 │
-│  ┌──────┴──────┐       │                           └─────────────────┘
+┌────────────────────────┐   bundle pull (every 30s)    ┌──────────────────┐
+│  Your agent process    │ ──────────────────────────► │                  │
+│  ┌──────────────────┐  │                              │  Rubric control  │
+│  │ Rubric SDK       │  │   audit events (batched)     │  plane (hosted)  │
+│  │  · evaluator     │  │ ──────────────────────────► │                  │
+│  │  · bundle cache  │  │                              │   Operators →    │
+│  │  · audit sink    │  │   trace upload (per call)    │   Dashboard      │
+│  │  · trace upload  │  │ ──────────────────────────► │                  │
+│  └──────────────────┘  │                              │                  │
+│         ▲              │   JWT exchange / refresh     │                  │
+│         │ in-process   │ ◄──────────────────────────  │                  │
+│  ┌──────┴──────┐       │                              └──────────────────┘
 │  │  Tool call  │       │
 │  └─────────────┘       │
 └────────────────────────┘
@@ -30,21 +29,21 @@ Rubric is split into three pieces with crisp boundaries:
 The SDK runs in-process, in the same Python interpreter as your agent. Three responsibilities:
 
 - **Evaluator.** A pure-Python (or Rust, with `[runtime]`) interpreter for your policy bundle. `evaluate()` is sub-millisecond — no network round-trip on the hot path.
-- **Bundle cache.** A background poller refreshes the bundle every 30 seconds. If the API is unreachable, the SDK keeps using the last-known-good bundle (fail-open by default; configurable).
-- **Audit sink.** Every `evaluate()` enqueues an `AuditEvent`. A background flush thread batches them and POSTs to `/v1/events` (default: every second or 100 events, whichever first).
+- **Bundle cache.** A background poller refreshes the bundle every 30 seconds. If the control plane is unreachable, the SDK keeps using the last-known-good bundle (fail-open by default; configurable).
+- **Audit sink.** Every `evaluate()` enqueues an audit event. A background flush thread batches them and ships to the control plane (default: every second or 100 events, whichever first).
 
 The SDK never blocks your tool dispatch on a network call. Outages of the control plane do not stop your agent.
 
-## Control plane
+## Control plane — hosted by us
 
-The control plane is the API + dashboard your agents and operators talk to. What it does:
+The control plane is the service your SDK calls and your operators use. What it does for you:
 
-- Issues per-agent JWT-SVIDs (60-min lifetime, EdDSA-signed, auto-refreshed by the SDK)
-- Stores policies (versioned, with diff and dry-run) and serves them as a signed bundle
-- Ingests audit events and traces, emits incidents on deny spikes / DLP critical hits
-- Hosts the dashboard for operators
+- Issues each agent a short-lived (60-minute) signed identity, auto-refreshed by the SDK
+- Stores your policies (versioned, with diff and dry-run) and serves them as a per-agent bundle
+- Ingests audit events and traces, opens incidents on deny spikes and high-severity DLP hits
+- Hosts the dashboard your operators sign into
 
-The protocol surface (`/v1/...`) is small and stable.
+You don't run any of this. You point the SDK at the API URL we give you, mint an enrollment token from the dashboard, and ship.
 
 ## Trust model
 
@@ -52,18 +51,18 @@ Rubric is opinionated about *who can do what*:
 
 | Actor | Credential | Can do | Cannot do |
 | --- | --- | --- | --- |
-| **Operator** | Clerk session (dashboard) | Manage policies, identities, enrollment tokens, see audit log | Forge an agent's identity |
-| **Enrollment token** | `enr_...` (long-lived) | Call `POST /v1/identities/enroll` | Anything else (no audit ingest, no bundle reads) |
-| **Agent (SDK)** | JWT-SVID (60-min) | Pull bundle, ship audit events for *its own* `agentId`, upload traces | Impersonate a different agent (server checks `sub` claim) |
+| **Operator** | Dashboard sign-in | Manage policies, identities, enrollment tokens, read the audit log | Forge an agent's identity |
+| **Enrollment token** | `enr_…` (long-lived) | Bootstrap a new agent identity | Anything else (no audit ingest, no bundle reads) |
+| **Agent (SDK)** | Short-lived signed identity (60 min) | Pull its bundle, ship audit events for *its own* agent id, upload traces | Impersonate a different agent — the control plane rejects any event whose agent id doesn't match the identity it was sent with |
 
-The JWT's `sub` claim is the agent's stable id. Audit events and trace uploads are rejected if the `agentId` in the body doesn't match the token's `sub`. There is no other way to ship attribution.
+There is no other way to ship attribution. Audit events and trace uploads are cryptographically bound to the SDK's identity.
 
 ## Failure modes
 
 | Failure | What happens |
 | --- | --- |
-| Control plane down | SDK uses last-known-good bundle. Audit events queue in memory; flushed on recovery. |
+| Control plane unreachable | SDK uses last-known-good bundle. Audit events queue in memory; flushed on recovery. |
 | Bundle stale | `gov.current_bundle.bundleVersion` reflects the last successful pull. Optionally enforce a max-age in your harness. |
-| JWT expired during outage | SDK auto-refreshes with `/v1/identities/refresh`. If the refresh endpoint is unreachable, the SDK retries and continues using the still-valid token until it expires. |
-| Process restart with same `agentName` | Enrollment is idempotent — same `(orgId, agentName)` resolves to the same identity row. Fresh JWT, same `sub`. |
-| Process restart with revoked identity | Enrollment returns `403 forbidden`. Operator must un-revoke or use a different name. |
+| Identity expires during outage | SDK auto-refreshes ahead of expiry. Transient refresh failures are retried; the still-valid identity keeps working until it expires. |
+| Process restart with same `agentName` | Enrollment is idempotent — same `(org, agentName)` resolves to the same identity. Fresh signed token, same agent id. |
+| Process restart with revoked identity | Enrollment is rejected. Operator must un-revoke or use a different name. |

@@ -29,10 +29,10 @@ Click **New incident** in the top-right. The modal asks for:
 
 On submit:
 
-1. An incident row is inserted with `reason = 'manual'`, `status = 'open'`. **Idempotency:** if there's already an open or acknowledged incident for that agent, the modal returns the existing one rather than duplicating.
+1. A new manual incident is opened. **Idempotency:** if there's already an open or acknowledged incident for that agent, the modal returns the existing one rather than duplicating.
 2. The agent's recent denies (last hour, capped at 50) are auto-attached so the detail page opens with real evidence, not an empty shell.
-3. If **Freeze this agent now** was checked, the agent's status flips to `frozen` and the per-agent bundles for that agent are rebuilt without the active policies — the SDK stops issuing tool calls on its next ≤30 s pull.
-4. One `incident.manual_opened` audit row is written. If the agent was frozen, an `agent.frozen` row follows. Both ride the unified hash chain.
+3. If **Freeze this agent now** was checked, the agent's status flips to `frozen` and the SDK stops issuing tool calls on its next ≤30 s pull.
+4. Both the manual open and (if applicable) the freeze are written to the audit ledger on the same tamper-evident chain as everything else.
 
 You land on `/incidents/[id]` to keep working.
 
@@ -74,6 +74,6 @@ The detail pane's **Freeze agent** button is the fastest way to stop an out-of-c
 
 1. Sets the agent's status to `frozen`.
 2. Revokes the agent's current identity (so refresh is rejected next cycle).
-3. Logs an `incident_event` of kind `freeze` so the timeline shows what happened.
+3. Records a freeze event on the incident's timeline so the audit trail shows what happened.
 
 The freeze is reversible — un-freeze on the agent's detail page.

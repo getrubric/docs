@@ -74,7 +74,7 @@ A rule matches when **every** condition in its list matches (logical AND). Condi
 
 ## Versioning
 
-Every save creates a new `policy_version`. Versions can be:
+Every save creates a new version. Versions can be:
 
 - **draft** — saved but not published. Visible in the editor, not in the bundle.
 - **active** — currently published. There is at most one active version per policy.
@@ -105,13 +105,13 @@ This is **explicit opt-in by design**. A newly-enrolled agent is unpoliced until
 
 ### How it ships
 
-- Scope lives in a `policy_agents` join table — it is **not** part of the policy YAML. Forking a template never carries scope across orgs; the fork prompts the operator for fresh agent selection.
-- The bundle pull endpoint is per-agent. Each `(orgId, agentRowId, bundleVersion)` produces a deterministic, hashed manifest. Editing scope on a published policy fans out fresh per-agent bundles to the affected agents only — no version bump, no SDK restart.
-- Scope edits are logged to the audit ledger with `kind = 'policy.scope.added'` or `'policy.scope.removed'`. They ride the same hash chain as tool-call decisions, so config tampering is as detectable as decision tampering.
+- Scope is **not** part of the policy YAML — it's a separate per-policy agent list. Forking a template never carries scope across orgs; the fork prompts the operator for fresh agent selection.
+- Each agent gets its own bundle slice. Editing scope on a published policy fans out fresh bundles to the affected agents only — no version bump, no SDK restart.
+- Every scope add/remove is recorded in the audit ledger right alongside tool-call decisions, on the same tamper-evident chain. Config tampering is as detectable as decision tampering.
 
 ### Required at publish
 
-`POST /v1/policies/:id/publish` rejects with RFC 9457 problem `policy-empty-scope` if no agents are scoped. The dashboard mirrors this by disabling the publish button until you pick at least one agent. Drafts are allowed to have empty scope — they're not in the bundle anyway.
+The dashboard disables the publish button until you pick at least one agent. Drafts are allowed to have empty scope — they're not in the bundle anyway.
 
 ### Filtering rule logic by agent metadata
 
