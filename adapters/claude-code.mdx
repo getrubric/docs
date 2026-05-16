@@ -1,0 +1,221 @@
+---
+title: "Claude Code adapter"
+description: "Gate every Claude Code tool call through your Rubric policies via a local daemon — no harness changes required."
+icon: "terminal"
+---
+
+The Claude Code adapter is different shape from the other adapters: it governs your **developer's own** Claude Code install, not a production agent you ship. The wedge it closes is the gap between what a local `.claude/settings.json` hook can do (single machine, single developer, no central audit) and what your security team needs (org-wide policy distribution, real-time audit, instant kill-switch).
+
+You run one command. Every Claude Code tool call after that — on this machine, by this developer — flows through your control plane. Allow or deny decisions land in the dashboard with `framework: claude-code`; deny reasons surface in the developer's terminal verbatim from the matched policy.
+
+<Note>
+Claude Code's hook system is enforcement-grade: a `deny` decision from a registered hook is non-bypassable in enterprise managed-settings mode, even with `--dangerously-skip-permissions`. See [Enterprise managed-settings](#enterprise-managed-settings) below.
+</Note>
+
+## How it differs from the Python adapters
+
+The MCP / Claude Agent / LangChain adapters are Python libraries you import into your agent process — evaluation happens in-process. The Claude Code adapter is a **long-lived loopback daemon** that Claude Code POSTs each tool call to.
+
+```
+Claude Code (per tool call)
+      │ POST http://127.0.0.1:47821/v1/hook
+      ▼
+┌─────────────────────────────────────────────────┐
+│ rubric daemon  (long-lived, launchd/systemd)    │
+│  - holds a per-agent JWT, refreshes on schedule │
+│  - polls /v1/bundle every 30s                   │
+│  - evaluates each request in-process (~1ms)     │
+│  - returns hookSpecificOutput JSON              │
+│  - queues audit events, batches to /v1/events   │
+└─────────────────────────────────────────────────┘
+```
+
+Why a daemon and not a per-call subprocess: spinning up Node for every tool call adds ~150 ms of cold-start. With a daemon, p99 enforcement is under 30 ms end-to-end.
+
+## Install
+
+Requires Node 20+ on macOS or Linux. (Windows is not supported in MVP.)
+
+```bash
+npx @rubric/claude-code init
+```
+
+You'll be prompted for three things:
+
+| Prompt | Value |
+| --- | --- |
+| **Rubric API URL** | The control-plane URL your operator gave you. Defaults to `http://localhost:3001` for local dev. |
+| **Agent name** | How this install shows up in the dashboard. Suggestion: `claude-code-<hostname>`. |
+| **Enrollment token** | The `enr_…` string from the dashboard's Enrollment page. Paste it; it's shown only once. |
+
+`init` does all of this in one pass:
+
+1. Test-enrolls the agent against the API so a wrong token fails loudly *before* anything is written.
+2. Generates a 32-byte daemon token and writes config files to `~/.config/rubric/` (mode `0600`).
+3. Patches `~/.claude/settings.json` with three hook entries (`PreToolUse`, `PostToolUse`, `SessionStart`) pointing at the daemon. **Existing entries are preserved** — the patcher is idempotent.
+4. Installs a platform service (`launchd` plist on macOS, `systemd --user` unit on Linux) so the daemon survives reboots.
+
+Total time on a fresh box: under two minutes.
+
+## Verify
+
+```bash
+rubric doctor
+```
+
+Runs six independent checks:
+
+```
+✓ config files present     /Users/x/.config/rubric/config.json
+✓ daemon process alive     pid 12345
+✓ daemon /healthz < 200ms  3ms on :47821
+✓ identity refresh works   https://api.your-rubric.dev reachable
+✓ settings.json has hooks  PreToolUse, PostToolUse, SessionStart wired
+✓ bundle non-empty + fresh 5 policy/policies, last pulled 12s ago
+```
+
+Each check fails with an actionable message if something is wrong — missing config, daemon dead, bundle stale, etc.
+
+## Writing policies for Claude Code
+
+Claude Code's built-in tools have specific names and input shapes. The adapter forwards them under stable field paths so a single policy works:
+
+| Field | What it is | Example |
+| --- | --- | --- |
+| `tool_name` | The tool Claude Code is about to call | `Bash`, `Read`, `Edit`, `Write`, `MultiEdit`, `WebFetch`, `WebSearch` |
+| `input.command` | Bash command being run | `rm -rf /tmp/foo` |
+| `input.file_path` | File path for read/write tools | `/Users/dev/.ssh/id_rsa` |
+| `input.url` | URL for WebFetch / WebSearch | `https://169.254.169.254/latest/meta-data/` |
+| `session_id` | Claude Code session id | `7f2c…` |
+| `agent_id` | Rubric-assigned agent id (this install) | `agent_a1b2c3…` |
+
+Policies are authored in the dashboard exactly like the production adapters. Example: block reads of common secret files:
+
+```yaml
+apiVersion: agent-governance.io/v1
+kind: Policy
+metadata:
+  name: block-secret-files-claude-code
+spec:
+  defaultEffect: allow
+  rules:
+    - id: deny-secret-file-access
+      effect: deny
+      conditions:
+        - field: tool_name
+          operator: in
+          value: [Read, Edit, Write, MultiEdit]
+        - field: input.file_path
+          operator: matches
+          value: '(?i)(\.env(\.|$)|\.pem$|/\.ssh/|/\.aws/credentials|id_rsa)'
+```
+
+When this fires, the developer sees the deny reason directly in their Claude Code terminal:
+
+> Rubric denied this call: policy `block-secret-files-claude-code` (rule `deny-secret-file-access`) matched.
+
+## Starter templates
+
+Three SDLC-focused templates ship in the dashboard's template library and are ready to fork:
+
+<CardGroup cols={3}>
+  <Card title="block-secret-files-claude-code" icon="key">
+    Denies `Read/Edit/Write/MultiEdit` against dotenv files, PEM bundles, SSH keys, AWS/GCP/k8s credentials.
+  </Card>
+  <Card title="block-destructive-shell-claude-code" icon="triangle-alert">
+    Denies `Bash` for `rm -rf` on absolute/home paths, `DROP TABLE`, `git push -f`, `mkfs.*`, `dd of=/dev/…`.
+  </Card>
+  <Card title="restrict-webfetch-claude-code" icon="shield-off">
+    Denies `WebFetch/WebSearch` to loopback, RFC1918, link-local, and cloud instance-metadata services (SSRF guard).
+  </Card>
+</CardGroup>
+
+Apply any of them to your dev-team's Claude Code agents from the dashboard's **Policies** page — same flow as the production adapter templates.
+
+## CLI reference
+
+```text
+rubric init               Interactive enrollment + filesystem setup + daemon start.
+rubric doctor             Run six sanity checks against the local install.
+rubric status             Concise overview: config path, pid, port, healthz, log file.
+rubric stop               SIGTERM the daemon and wait for graceful shutdown.
+rubric logs               Pretty-print the daemon log with optional filters.
+rubric uninstall          Reverse `init`: stop daemon, unpatch settings.json, remove config.
+```
+
+### `rubric init` flags
+
+```text
+--api-url <url>             Skip the prompt — useful in scripts.
+--agent-name <name>         Skip the prompt.
+--enrollment-token <token>  Skip the prompt.
+--no-start                  Don't spawn the daemon at the end of init.
+--no-settings-patch         Leave ~/.claude/settings.json alone (managed-settings deployments).
+--force                     Re-run init even if a config already exists.
+```
+
+### `rubric logs` filters
+
+```text
+--decision <allow|deny|ask>   PreToolUse decisions of this kind
+--tool <name>                  Events with tool=<name> (Bash, Read, ...)
+--since <duration>             Only entries newer than this (30s, 5m, 2h, 1d)
+-f, --follow                   Keep tailing as new lines arrive
+```
+
+Examples:
+
+```bash
+rubric logs --decision deny --since 1h
+rubric logs --tool Bash --follow
+```
+
+### `rubric uninstall` flags
+
+```text
+--purge          Also remove the log file (default: preserved for postmortem).
+--keep-daemon    Don't stop the daemon — useful for scripted teardown.
+```
+
+## Failure modes
+
+The daemon is designed so enforcement stays correct even when things go wrong.
+
+| Scenario | Developer sees | Audit captured? |
+| --- | --- | --- |
+| Daemon not running | Hook times out → Claude Code falls through to "ask" prompt | No |
+| API down, ≤30 min | Tool calls enforced on cached bundle; events queue locally | Yes, on recovery |
+| JWT refresh fails for >10 min | Daemon switches to `ask` mode | Queued |
+| Cold start, no bundle yet | First ~10s: `ask` — never auto-allow | Yes |
+| Bundle stale (>90s since last pull) | Enforces cached bundle, emits warning | Yes |
+| Agent frozen in dashboard | Next bundle (≤30 s) flips to deny-everything with code `AGENT_FROZEN` | Yes |
+| Daemon panics | launchd / systemd restarts. In-flight request times out → "ask" | Yes, post-recovery |
+| `settings.json` corrupted | Claude Code runs hookless; `rubric doctor` detects on next run | No |
+
+Unifying principle: **never auto-allow without an authoritative bundle**.
+
+## Enterprise managed-settings
+
+Claude Code reads hook configuration from up to three sources, in order: **managed settings** (admin-controlled), **user settings** (`~/.claude/settings.json`), and **project settings** (`./.claude/settings.json`). Set `allowManagedHooksOnly: true` in your managed config and the user/project sources can no longer override the hook block — every tool call goes through Rubric, no exceptions.
+
+In a managed deployment, run:
+
+```bash
+rubric init --no-settings-patch
+```
+
+…to install the daemon without touching the user's `settings.json`. Then push the same hook block via your MDM / Jamf / managed-config tool. The daemon and the hooks become tamper-resistant; the developer can't disable governance by editing a file.
+
+## Uninstall
+
+```bash
+rubric uninstall
+```
+
+Removes the daemon, the platform service, and the hook entries from `~/.claude/settings.json`. Leaves the log file at `~/Library/Logs/rubric/claude-code.log` (macOS) or `~/.local/state/rubric/claude-code.log` (Linux) for postmortem. Add `--purge` to remove logs as well.
+
+User-authored entries in `settings.json` are preserved — only entries pointing at the local daemon URL are stripped.
+
+## Where to file issues
+
+`@rubric/claude-code` ships from the [getrubric/platform](https://github.com/getrubric/platform) repo under `sdk/node/`. Bugs and feature requests go in that repo's issue tracker; policy questions go to your operator.

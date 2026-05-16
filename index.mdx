@@ -67,3 +67,11 @@ If you're using a framework, the adapter wraps your tools so you don't write any
     `govern_tools(gov, tools, session_id)` — wraps any `BaseTool` list.
   </Card>
 </CardGroup>
+
+## Govern Claude Code
+
+A different shape: Rubric also ships a CLI that gates your **developer's own** Claude Code install through the same control plane. Same policy authoring, same dashboard, same audit log — different host. Useful when the AI agent you're worried about isn't one you wrote.
+
+<Card title="Claude Code adapter" icon="terminal" href="/adapters/claude-code">
+  `npx @rubric/claude-code init` — installs a loopback daemon that runs every Claude Code tool call through your bundle. Survives reboots via launchd/systemd. Three SDLC starter templates included.
+</Card>
