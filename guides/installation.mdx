@@ -12,15 +12,15 @@ The Python SDK is published as `rubric` on PyPI.
 
 <CodeGroup>
 ```bash pip
-pip install rubric
+pip install rubric-app
 ```
 
 ```bash uv
-uv add rubric
+uv add rubric-app
 ```
 
 ```bash poetry
-poetry add rubric
+poetry add rubric-app
 ```
 </CodeGroup>
 
@@ -36,7 +36,7 @@ Choose the extra(s) matching your agent framework. Each extra is a thin adapter 
 | `rubric[runtime]` | Optional native evaluator backend (Rust). Faster, identical semantics. |
 | `rubric[presidio]` | Presidio-backed DLP detection. |
 
-You can stack them: `pip install 'rubric[mcp,runtime,presidio]'`.
+You can stack them: `pip install 'rubric-app[mcp,runtime,presidio]'`.
 
 ## Configure
 

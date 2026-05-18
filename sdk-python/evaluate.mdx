@@ -114,7 +114,7 @@ The trace is uploaded to Rubric and the returned `traceId` is attached to the au
 Synchronous portion (returns to caller):
 
 - Pure-Python evaluator: ~50–200µs.
-- Native (Rust) evaluator: ~5–20µs (`pip install rubric[runtime]`).
+- Native (Rust) evaluator: ~5–20µs (`pip install rubric-app[runtime]`).
 - DLP scan: ~50µs (regex), ~1ms (Presidio).
 - Trace upload (if attached): 2–5ms.
 
