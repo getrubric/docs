@@ -67,6 +67,15 @@
               "sdk-python/dlp",
               "sdk-python/errors"
             ]
+          },
+          {
+            "group": "Node",
+            "pages": [
+              "sdk-node/install",
+              "sdk-node/core",
+              "sdk-node/evaluator",
+              "sdk-node/errors"
+            ]
           }
         ]
       }

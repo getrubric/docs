@@ -1,68 +1,81 @@
 ---
-title: "Architecture"
-description: "How the SDK and the Rubric control plane fit together."
+title: "How it works"
+description: "What the Rubric SDK does in your process and what it sends over the wire."
 icon: "diagram-project"
 ---
 
-Rubric is split into two pieces: the **SDK** that runs in your agent process, and the **control plane** we host for you. They talk over HTTPS — the SDK pulls policy bundles and ships audit events; the control plane stores policies, ingests audit events, and serves the dashboard.
+You install the Rubric SDK in the same process as your agent. It runs three background tasks and exposes a single hot-path call (`evaluate()`) that your tool dispatcher invokes.
 
 ```
-┌────────────────────────┐   bundle pull (every 30s)    ┌──────────────────┐
-│  Your agent process    │ ──────────────────────────► │                  │
-│  ┌──────────────────┐  │                              │  Rubric control  │
-│  │ Rubric SDK       │  │   audit events (batched)     │  plane (hosted)  │
-│  │  · evaluator     │  │ ──────────────────────────► │                  │
-│  │  · bundle cache  │  │                              │   Operators →    │
-│  │  · audit sink    │  │   trace upload (per call)    │   Dashboard      │
-│  │  · trace upload  │  │ ──────────────────────────► │                  │
-│  └──────────────────┘  │                              │                  │
-│         ▲              │   JWT exchange / refresh     │                  │
-│         │ in-process   │ ◄──────────────────────────  │                  │
-│  ┌──────┴──────┐       │                              └──────────────────┘
-│  │  Tool call  │       │
-│  └─────────────┘       │
-└────────────────────────┘
+┌─────────────────────────────────┐
+│  Your agent process             │
+│                                 │
+│  ┌─────────────────────────┐    │
+│  │ Rubric SDK              │    │
+│  │   evaluator             │    │
+│  │   bundle cache  ⟵ poll  │ ─→ Rubric API
+│  │   audit sink    ⟶ batch │ ─→ Rubric API
+│  │   identity      ⟶ JWT   │ ─→ Rubric API
+│  └─────────────────────────┘    │
+│         ▲                       │
+│         │ in-process            │
+│  ┌──────┴──────┐                │
+│  │  Tool call  │                │
+│  └─────────────┘                │
+└─────────────────────────────────┘
 ```
 
-## SDK — in your process
+## What the SDK does
 
-The SDK runs in-process, in the same Python interpreter as your agent. Three responsibilities:
+The SDK has three responsibilities, all of which run in your process without blocking your tool dispatch.
 
-- **Evaluator.** A pure-Python (or Rust, with `[runtime]`) interpreter for your policy bundle. `evaluate()` is sub-millisecond — no network round-trip on the hot path.
-- **Bundle cache.** A background poller refreshes the bundle every 30 seconds. If the control plane is unreachable, the SDK keeps using the last-known-good bundle (fail-open by default; configurable).
-- **Audit sink.** Every `evaluate()` enqueues an audit event. A background flush thread batches them and ships to the control plane (default: every second or 100 events, whichever first).
+### Evaluator
 
-The SDK never blocks your tool dispatch on a network call. Outages of the control plane do not stop your agent.
+`evaluate()` is sub-millisecond — it interprets your policy bundle against the tool call's metadata and returns `allow` / `deny` synchronously, without a network round-trip on the hot path. Bundles are pre-compiled when received so regex evaluation is a constant-time operation per call.
 
-## Control plane — hosted by us
+### Bundle cache
 
-The control plane is the service your SDK calls and your operators use. What it does for you:
+A background poller refreshes the bundle every 30 seconds. The bundle is kept in memory and used for every evaluation until the next poll succeeds. If Rubric is unreachable, the SDK keeps using the last-known-good bundle — your agent continues to enforce policy even during a network outage.
 
-- Issues each agent a short-lived (60-minute) signed identity, auto-refreshed by the SDK
-- Stores your policies (versioned, with diff and dry-run) and serves them as a per-agent bundle
-- Ingests audit events and traces, opens incidents on deny spikes and high-severity DLP hits
-- Hosts the dashboard your operators sign into
+The bundle is content-hashed; the poller sends `?since=<hash>` so unchanged bundles return `304 Not Modified` instead of re-downloading. Incoming bundles are also checked for version monotonicity: a bundle whose `bundleVersion` is lower than the cached one, or whose `builtAt` is significantly older, is rejected to defeat rollback attempts.
 
-You don't run any of this. You point the SDK at the API URL we give you, mint an enrollment token from the dashboard, and ship.
+### Audit sink
+
+Every `evaluate()` enqueues an audit event into an in-memory queue. A background flush task batches events and ships them — default cadence is every second or 100 events, whichever comes first. Your code never waits on the network.
+
+If the queue fills (default cap: 10,000 events) or repeated ship failures exhaust retries, events are dropped and a counter increments. The counters are surfaced through `getStats()` so your monitoring can alarm on silent drops.
+
+### Identity
+
+On startup the SDK exchanges your enrollment token for a short-lived (60 minute) signed identity. A background task refreshes it ahead of expiry. The signed identity is what authenticates the bundle pulls and audit uploads — your enrollment token is only used at boot.
+
+## What gets sent over the wire
+
+The SDK makes three classes of HTTPS request:
+
+| Request | Purpose |
+| --- | --- |
+| `POST /v1/identities/enroll` / `…/refresh` | Exchange the enrollment token for a signed identity; refresh it before expiry. |
+| `GET /v1/bundle?since=<hash>` | Pull the latest policy bundle scoped to this agent. |
+| `POST /v1/events` | Ship batched audit events. |
+
+That's the whole egress surface. There is no telemetry, no anonymous usage reporting, and no other endpoint the SDK calls.
 
 ## Trust model
 
-Rubric is opinionated about *who can do what*:
-
-| Actor | Credential | Can do | Cannot do |
+| Credential | Issued to | Can do | Cannot do |
 | --- | --- | --- | --- |
-| **Operator** | Dashboard sign-in | Manage policies, identities, enrollment tokens, read the audit log | Forge an agent's identity |
-| **Enrollment token** | `enr_…` (long-lived) | Bootstrap a new agent identity | Anything else (no audit ingest, no bundle reads) |
-| **Agent (SDK)** | Short-lived signed identity (60 min) | Pull its bundle, ship audit events for *its own* agent id, upload traces | Impersonate a different agent — the control plane rejects any event whose agent id doesn't match the identity it was sent with |
+| Enrollment token (`enr_…`) | Operators, via the dashboard | Bootstrap a new agent's identity | Ship audit events, read bundles, impersonate an existing agent |
+| Signed identity (60 min) | The SDK at boot, refreshed automatically | Pull the agent's bundle; ship audit events attributed to that agent | Impersonate a different agent — Rubric rejects any event whose agent id doesn't match the identity it was sent with |
 
-There is no other way to ship attribution. Audit events and trace uploads are cryptographically bound to the SDK's identity.
+Enrollment tokens are designed to be safe to commit to your deployment manifest. They can only register; if leaked the worst-case impact is "attacker creates an extra agent row in your org," which is revocable from the dashboard.
 
 ## Failure modes
 
-| Failure | What happens |
+| Failure | Behavior |
 | --- | --- |
-| Control plane unreachable | SDK uses last-known-good bundle. Audit events queue in memory; flushed on recovery. |
-| Bundle stale | `gov.current_bundle.bundleVersion` reflects the last successful pull. Optionally enforce a max-age in your harness. |
-| Identity expires during outage | SDK auto-refreshes ahead of expiry. Transient refresh failures are retried; the still-valid identity keeps working until it expires. |
-| Process restart with same `agentName` | Enrollment is idempotent — same `(org, agentName)` resolves to the same identity. Fresh signed token, same agent id. |
-| Process restart with revoked identity | Enrollment is rejected. Operator must un-revoke or use a different name. |
+| Rubric API unreachable | SDK uses last-known-good bundle. Audit events queue in memory and flush on recovery. |
+| Bundle stale | The SDK exposes `lastPullAt` and `lastBundleChangeAt` so your harness can enforce a max-age if you want to fail closed after a threshold. |
+| Identity expires mid-outage | The refresh task retries with backoff. The still-valid identity continues working until it expires. |
+| Process restart | Enrollment is idempotent on `agentName` — restarting returns the same agent id with a fresh signed token. |
+| Identity revoked | Enrollment is rejected. Operator must un-revoke from the dashboard or pick a different `agentName`. |

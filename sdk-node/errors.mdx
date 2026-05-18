@@ -1,0 +1,76 @@
+---
+title: "Errors"
+description: "Exception classes exported by @rubric-app/core."
+icon: "circle-exclamation"
+---
+
+`@rubric-app/core` ships a small hierarchy of typed error classes. All inherit from `GovernanceError`, which inherits from the standard `Error`.
+
+```ts
+import {
+  GovernanceError,
+  GovernanceProblemError,
+  IdentityNotInitializedError,
+  IdentityRevokedError,
+} from '@rubric-app/core';
+```
+
+## `GovernanceError`
+
+Base class for every Rubric-thrown error. Catch this to handle any SDK failure generically:
+
+```ts
+try {
+  audit.enqueue(event);
+} catch (err) {
+  if (err instanceof GovernanceError) {
+    // any Rubric SDK error
+  }
+  throw err;
+}
+```
+
+## `GovernanceProblemError`
+
+Thrown when Rubric returns an [RFC 9457](https://datatracker.ietf.org/doc/html/rfc9457) problem-details response. Carries the parsed body so you can branch on `problem.type` instead of parsing error strings.
+
+```ts
+catch (err) {
+  if (err instanceof GovernanceProblemError) {
+    console.error(err.problem.type, err.problem.title, err.problem.status);
+  }
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `problem.type` | `string` | URI identifying the problem class. |
+| `problem.title` | `string` | Short human-readable summary. |
+| `problem.status` | `number` | HTTP status code. |
+| `problem.detail` | `string \| null` | Longer description, if any. Always passes through `scrubSecrets` before being interpolated into `err.message`. |
+| `problem.instance` | `string \| null` | URI of the specific occurrence, if any. |
+
+## `IdentityRevokedError`
+
+Thrown when the server says the agent's identity is no longer valid. After this throws, the `TokenStore` enters a terminal `dead` state — subsequent calls to `tokenStore.token()` will also throw.
+
+Recovery: re-enroll the agent (mint a fresh enrollment token, restart the process). The `agentName` is idempotent, so you'll get the same agent id back.
+
+## `IdentityNotInitializedError`
+
+Thrown when something tries to use a `TokenStore` that hasn't been bootstrapped yet. You shouldn't see this in normal use — `bootstrapTokenStore` does the initial enrollment for you.
+
+## Helpers
+
+`@rubric-app/core` also exports two utilities for working with `unknown` thrown values without unsafe casts:
+
+```ts
+import { errMessage, errCode } from '@rubric-app/core';
+
+try { /* ... */ } catch (err: unknown) {
+  console.error(errMessage(err));   // safe `.message` extraction
+  if (errCode(err) === 'ENOENT') { /* ... */ }   // safe `.code` extraction for Node fs errors
+}
+```
+
+These are exposed under the `_internal.ts` umbrella — stable in practice but not covered by the public semver contract.

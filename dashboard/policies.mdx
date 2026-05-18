@@ -34,7 +34,7 @@ Pick one, customize, dry-run, publish.
 
 ## Dry-run
 
-Before publishing, click **Dry-run** in the editor. The control plane replays the last N (default 1000) audit events through the candidate policy and shows you:
+Before publishing, click **Dry-run** in the editor. Rubric replays the last N (default 1000) audit events through the candidate policy and shows you:
 
 - **Decisions** — how many events would have been allowed vs denied.
 - **Most affected agents** — which agents are most often denied by this rule.
@@ -50,7 +50,7 @@ Click **Publish** to make a draft version active. Effects:
 1. The previous active version becomes `archived`.
 2. The new version becomes `active`.
 3. The bundle version increments.
-4. The control plane fans out fresh per-agent bundles for every agent in the org (each agent's bundle is the intersection of the new active policies with that agent's scope membership).
+4. Rubric fans out fresh per-agent bundles for every agent in the org (each agent's bundle is the intersection of the new active policies with that agent's scope membership).
 5. SDKs see the new bundle on their next 30-second poll.
 
 **The publish button is disabled when no agents are in scope.** Add at least one agent on the **Applied to agents** card before publishing.

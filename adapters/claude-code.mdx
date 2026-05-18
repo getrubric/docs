@@ -4,34 +4,42 @@ description: "Gate every Claude Code tool call through your Rubric policies. <30
 icon: "terminal"
 ---
 
-Adds **under 30 ms p99** per Claude Code tool call (typically ~2–3 ms on a developer laptop). Policy authoring, audit log, and dashboard are shared with your production-agent setup.
+Adds **under 1 ms p95** per Claude Code tool call (measured on a developer laptop, loopback). Policy authoring, audit log, and dashboard are shared with your production-agent setup.
 
 ## Install
 
-Requires Node 20+ on macOS or Linux.
+Requires **Node.js 22+** on macOS or Linux.
 
 ```bash
-npx @rubric/claude-code init
+npm i -g @rubric-app/claude-code
+rubric init
 ```
 
-You'll be prompted for three values:
+`rubric init` is interactive and prompts for two values:
 
 | Prompt | Value |
 | --- | --- |
-| **Rubric API URL** | The control-plane URL from your operator. |
 | **Agent name** | How this install shows in the dashboard. Suggestion: `claude-code-<hostname>`. |
 | **Enrollment token** | The `enr_…` string from the dashboard's Enrollment page. |
 
+The Rubric API URL defaults to `https://api.rubric-app.com`. Override with the `RUBRIC_API_URL` env var if you've been given a different URL.
+
 After `init` completes, every Claude Code tool call on this machine flows through your policies. No code change, no harness change.
 
-Skip prompts with flags for scripted installs:
+### Scripted installs
+
+Skip prompts with flags:
 
 ```bash
-npx @rubric/claude-code init \
-  --api-url https://api.your-rubric.dev \
+npm i -g @rubric-app/claude-code
+rubric init \
   --agent-name claude-code-laptop \
   --enrollment-token "$RUBRIC_ENROLLMENT_TOKEN"
 ```
+
+Or via env vars: `RUBRIC_AGENT_NAME`, `RUBRIC_ENROLLMENT_TOKEN`, `RUBRIC_API_URL`.
+
+`init` will also install a launchd LaunchAgent (macOS) or systemd-user unit (Linux) so the daemon survives logout and reboot.
 
 ## Verify
 
@@ -50,11 +58,11 @@ Six checks must pass:
 ✓ bundle non-empty + fresh
 ```
 
-Each failure prints an actionable next step.
+Each failure prints an actionable next step. The most common failure on a fresh install is `bundle non-empty + fresh` — you need to author at least one policy in the dashboard and scope it to this agent.
 
 ## Writing policies
 
-Policies are authored in the dashboard exactly like the production adapters. The fields available to Claude Code policies:
+Policies are authored in the dashboard exactly like the production adapters. Fields available to Claude Code policies:
 
 | Field | Example values |
 | --- | --- |
@@ -90,22 +98,6 @@ The deny reason shows verbatim in the developer's Claude Code terminal:
 
 > Rubric denied this call: policy `block-secret-files-claude-code` (rule `deny-secret-file-access`) matched.
 
-## Starter templates
-
-Three Claude-Code-specific templates ship in the dashboard's template library — fork from **Policies → Templates**:
-
-<CardGroup cols={3}>
-  <Card title="block-secret-files-claude-code" icon="key">
-    Denies `Read/Edit/Write/MultiEdit` against dotenv files, PEM bundles, SSH keys, AWS/GCP/k8s credentials.
-  </Card>
-  <Card title="block-destructive-shell-claude-code" icon="triangle-alert">
-    Denies `Bash` for `rm -rf` on absolute/home paths, `DROP TABLE`, `git push -f`, `mkfs.*`, `dd of=/dev/…`.
-  </Card>
-  <Card title="restrict-webfetch-claude-code" icon="shield-off">
-    Denies `WebFetch/WebSearch` to loopback, RFC1918, link-local, and cloud instance-metadata services.
-  </Card>
-</CardGroup>
-
 ## CLI reference
 
 ```text
@@ -120,26 +112,33 @@ rubric uninstall  Stop daemon, unpatch settings.json, remove config.
 ### `rubric init` flags
 
 ```text
---api-url <url>             Skip the prompt.
+--api-url <url>             Override the API URL (defaults to https://api.rubric-app.com).
 --agent-name <name>         Skip the prompt.
 --enrollment-token <token>  Skip the prompt.
 --no-start                  Don't spawn the daemon at the end of init.
---no-settings-patch         Leave ~/.claude/settings.json alone (managed-settings deployments).
+--no-settings-patch         Leave ~/.claude/settings.json alone.
 --force                     Re-run init even if a config already exists.
 ```
 
 ### `rubric logs` filters
 
 ```text
---decision <allow|deny|ask>  PreToolUse decisions of this kind
---tool <name>                 Events with tool=<name> (Bash, Read, ...)
---since <duration>            Only entries newer than this (30s, 5m, 2h, 1d)
--f, --follow                  Keep tailing as new lines arrive
+--decision <allow|deny>      Show only PreToolUse decisions of this kind.
+--tool <name>                Events with tool=<name> (Bash, Read, ...).
+--since <duration>           Only entries newer than this (30s, 5m, 2h, 1d).
+-f, --follow                 Keep tailing as new lines arrive.
 ```
 
 ```bash
 rubric logs --decision deny --since 1h
 rubric logs --tool Bash --follow
+```
+
+### `rubric stop` flags
+
+```text
+--force        Fall back to raw SIGTERM if the daemon doesn't respond to the
+               authenticated shutdown request.
 ```
 
 ### `rubric uninstall` flags
@@ -149,15 +148,25 @@ rubric logs --tool Bash --follow
 --keep-daemon  Don't stop the daemon (useful in scripted teardown).
 ```
 
-## Enterprise managed-settings
+## Where things live on disk
 
-For deployments that need the hooks to be non-bypassable, push the hook block via managed-settings with `allowManagedHooksOnly: true`. Run `rubric init --no-settings-patch` so the daemon installs without touching the user's `~/.claude/settings.json`; the hook block is supplied by your managed config instead.
+| Path | What's there |
+| --- | --- |
+| `~/.config/rubric/config.json` | API URL, agent name, enrollment token. Mode `0600`. |
+| `~/.config/rubric/daemon.token` | 64-char hex bearer token gating the loopback daemon. Mode `0600`. |
+| `~/.config/rubric/daemon.pid` | Daemon process id. |
+| `~/.config/rubric/daemon.port` | Bound port (defaults to 47821; falls back to OS-assigned). |
+| `~/.claude/settings.json` | Patched with three Rubric hook entries (PreToolUse, PostToolUse, SessionStart). User-authored entries are preserved. |
+| `~/Library/Logs/rubric/claude-code.log` (macOS) | Daemon log. |
+| `~/.local/state/rubric/claude-code.log` (Linux) | Daemon log. |
+| `~/Library/LaunchAgents/dev.rubric.claude-code.plist` (macOS) | Service definition. |
+| `~/.config/systemd/user/rubric-claude-code.service` (Linux) | Service definition. |
 
 ## Uninstall
 
 ```bash
-rubric uninstall          # leaves logs at ~/Library/Logs/rubric/claude-code.log
+rubric uninstall          # leaves logs for postmortem
 rubric uninstall --purge  # also removes the log file
 ```
 
-User-authored entries in `settings.json` are preserved — only entries pointing at the local daemon URL are stripped.
+User-authored entries in `~/.claude/settings.json` are preserved — only entries pointing at the local daemon URL are stripped.

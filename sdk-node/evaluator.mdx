@@ -1,0 +1,101 @@
+---
+title: "Evaluator"
+description: "Synchronous, in-process policy evaluator."
+icon: "scale-balanced"
+---
+
+The `Evaluator` interprets a policy bundle against a tool-call request and returns `allow` / `deny` synchronously. It runs in your process, with no network round-trip on the hot path.
+
+```ts
+import { Evaluator } from '@rubric-app/core';
+
+const evaluator = new Evaluator();
+// `evaluator.updateBundle(bundle)` is normally called by BundlePoller's
+// `onUpdate` callback. Call it manually if you're loading bundles
+// from somewhere other than the API.
+evaluator.updateBundle(bundle);
+
+const result = evaluator.evaluate({
+  tool_name: 'Bash',
+  agent_id: 'agent-abc',
+  input: { command: 'rm -rf /tmp/foo' },
+});
+```
+
+## Constructor
+
+```ts
+new Evaluator(options?: EvaluatorOptions)
+```
+
+| Option | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `onCompileError` | `({ policyId, ruleId, pattern, cause }) => void` | no-op | Called when a `matches` rule's regex fails to compile. The containing policy is marked errored and every evaluation that touches it returns `deny / POLICY_COMPILE_ERROR`. Use this hook to log/alert. |
+
+## `evaluate(request)`
+
+`EvaluationRequest` is an arbitrary object with `tool_name` (required) and an optional `agent_id`. Add any other fields your policies reference as dot-paths (`input.command`, `kwargs.amount`, etc.).
+
+Returns an `EvaluationResult`:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `decision` | `'allow' \| 'deny'` | The decision. |
+| `matchedPolicyId` | `string \| null` | Id of the policy that matched a rule, if any. `null` if the result is from `defaultEffect` fall-through. |
+| `matchedPolicyVersion` | `number \| null` | Version of the matched policy. |
+| `matchedRuleId` | `string \| null` | Id of the rule that matched. |
+| `code` | `'AGENT_FROZEN' \| 'NO_POLICIES' \| 'POLICY_COMPILE_ERROR' \| 'EVAL_TIMEOUT' \| undefined` | Stable code on denies that aren't from a regular rule match. |
+| `reason` | `string \| undefined` | Human-readable reason for the deny. Surfaces the kill-switch / fail-closed message. |
+| `latencyMs` | `number` | Wall-clock evaluation time in ms. |
+
+## Algorithm
+
+1. **Frozen-agent kill-switch.** If `bundle.frozenAgentIds` contains `request.agent_id` (case-insensitive), return `deny / AGENT_FROZEN` before any rule fires.
+2. **Empty-bundle fail-closed.** If no bundle is loaded or the bundle has no policies, return `deny / NO_POLICIES`.
+3. **Per-policy compile check.** If any policy contains a `matches` rule whose regex failed to compile, return `deny / POLICY_COMPILE_ERROR` when that policy is reached.
+4. **Rule scan.** For every `(policy, rule)` pair, AND all conditions. On match:
+   - Record the rule as the current "matched" rule.
+   - If the rule's effect is `deny`, return immediately.
+   - If `allow`, keep scanning — a later deny wins.
+5. **Fall-through.** If no rule matched, return the first policy's `spec.defaultEffect`.
+
+The summary: **first-deny-wins; otherwise last-allow-wins; otherwise the first policy's defaultEffect**.
+
+## Operators
+
+| Operator | Semantics |
+| --- | --- |
+| `eq`, `neq` | Strict equality on the resolved field value. |
+| `in`, `not_in` | Membership in a list (scalar values are normalized to singleton lists). Both sides are stringified before comparison. |
+| `contains`, `starts_with`, `ends_with` | String operations. The resolved field is stringified; the condition value must be a string. |
+| `matches` | re2-backed regex (non-backtracking — ReDoS-immune). Lookaround and backreferences are not supported; patterns using them fail to compile and trigger `POLICY_COMPILE_ERROR`. |
+
+## Field resolution
+
+Dot-paths walk the request object:
+
+```ts
+evaluator.evaluate({
+  tool_name: 'pay',
+  kwargs: { amount: 5000 },
+});
+
+// matches `cond('kwargs.amount', 'matches', '^[1-9][0-9]{3,}$')`
+```
+
+Missing path components resolve to `undefined`, which compares unequal to anything a policy would `eq` against. `__proto__`, `constructor`, and `prototype` parts are rejected at the schema layer to prevent prototype-walking; `resolveField` also uses `Object.hasOwn` so inherited properties don't resolve.
+
+## Wall-clock budget
+
+Each `evaluate()` call is bounded to **50 ms** of total work. If a pathologically large bundle would exceed that, evaluation bails out with `deny / EVAL_TIMEOUT` rather than blocking the event loop. The check fires at rule boundaries, so the actual upper bound is "current rule's evaluation time + 50 ms."
+
+For a healthy 1000-rule bundle on a modern laptop, evaluation typically completes in 1–2 ms — well under the budget.
+
+## Code paths that surface result codes
+
+| Code | When |
+| --- | --- |
+| `AGENT_FROZEN` | The agent id is in `frozenAgentIds`. Operator kill-switch from the dashboard. |
+| `NO_POLICIES` | Bundle is null (never loaded) or has zero policies. |
+| `POLICY_COMPILE_ERROR` | The matched policy contains a `matches` rule with an uncompileable pattern. |
+| `EVAL_TIMEOUT` | Per-evaluation wall-clock budget exceeded. |

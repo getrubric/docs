@@ -117,7 +117,7 @@ Stops the singleton and flushes in-flight audit events. Called automatically by 
 | --- | --- |
 | `rubric.GovernanceNotInitializedError` | `@tool` or `evaluate()` called before `init()`. |
 | `rubric.GovernanceDeniedError` | A policy denied a `@tool`-wrapped call. Has `.tool_name` and `.result` attributes. |
-| `rubric.GovernanceProblemError` | Control-plane returned an RFC 9457 problem response (e.g. enrollment token revoked). |
+| `rubric.GovernanceProblemError` | Rubric API returned an RFC 9457 problem response (e.g. enrollment token revoked). |
 
 ## When NOT to use the singleton
 

@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install the SDK in your agent project and point it at your Rubric control plane."
+description: "Install the SDK in your agent project and point it at your Rubric API."
 icon: "download"
 ---
 
@@ -52,7 +52,7 @@ export AG_API_URL=https://api.your-rubric-url.example.com   # the URL we gave yo
 
 ## Verify
 
-Hit the control plane's health endpoint to confirm reachability:
+Hit Rubric's health endpoint to confirm reachability:
 
 ```bash
 curl "$AG_API_URL/health"

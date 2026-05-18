@@ -1,0 +1,46 @@
+---
+title: "Install"
+description: "Install @rubric-app/core or @rubric-app/claude-code."
+icon: "download"
+---
+
+The Node SDK ships as two npm packages under the `@rubric-app` scope. Pick the one matching what you're building.
+
+## `@rubric-app/claude-code`
+
+The drop-in CLI that gates Claude Code tool calls through your policies. **Most users want this one.**
+
+```bash
+npm i -g @rubric-app/claude-code
+rubric init
+```
+
+Full setup in the [Claude Code adapter](/adapters/claude-code) page.
+
+## `@rubric-app/core`
+
+Framework-neutral building blocks. Use this when you're writing your own adapter (Cursor, Windsurf, an in-house framework, anything not already in [/adapters/](/adapters/mcp)).
+
+```bash
+npm i @rubric-app/core
+```
+
+The exports are documented in [Core building blocks](/sdk-node/core).
+
+## Requirements
+
+- **Node.js 22+** for both packages
+- macOS or Linux for the Claude Code adapter (the daemon needs launchd or systemd; Windows is on the roadmap)
+- `@rubric-app/core` runs anywhere Node 22 runs
+
+## Configuration
+
+The SDK reads three values from env vars when they're not passed explicitly:
+
+| Env var | Purpose |
+| --- | --- |
+| `AG_ENROLLMENT_TOKEN` | The `enr_…` string you minted on the dashboard's Enrollment page. |
+| `AG_AGENT_NAME` | Stable name for this agent. Enrollment is idempotent on this. |
+| `AG_API_URL` | Rubric API URL. Defaults to `https://api.rubric-app.com`. |
+
+The Claude Code CLI uses its own variants (`RUBRIC_ENROLLMENT_TOKEN`, `RUBRIC_AGENT_NAME`, `RUBRIC_API_URL`) and stores them in `~/.config/rubric/config.json` so subsequent boots don't need them in the environment.

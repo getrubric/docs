@@ -4,20 +4,20 @@ description: "Per-agent signed identities, enrollment tokens, and how the SDK se
 icon: "id-card"
 ---
 
-Every governed agent has its own cryptographic identity — a short-lived, signed token issued by the control plane, bound to a stable `agentId`. The SDK obtains and refreshes it automatically. You don't write any of this code yourself.
+Every governed agent has its own cryptographic identity — a short-lived, signed token issued by Rubric, bound to a stable `agentId`. The SDK obtains and refreshes it automatically. You don't write any of this code yourself.
 
 ## What the identity gives you
 
-The signed identity is a 60-minute token that the SDK presents on every call to the control plane. Two properties matter:
+The signed identity is a 60-minute token that the SDK presents on every call to Rubric. Two properties matter:
 
 - **Stable agent id.** Audit ingest, trace upload, and bundle reads all assert the agent id against the body of the request — an agent can only ship attribution for itself. There is no way to forge another agent's events.
 - **Auto-rotating.** The SDK refreshes the token ahead of expiry. Your code never sees an auth error from a normal expiry.
 
-The signing key is owned by the control plane. Your agents never see it.
+The signing key is owned by Rubric. Your agents never see it.
 
 ## How the SDK bootstraps
 
-Enrollment is the only bootstrap path. You mint a long-lived, **register-only** enrollment token in the dashboard and drop it into your agent process as an environment variable. On startup the SDK presents the token plus an `agentName`, and the control plane mints a fresh signed identity for that agent.
+Enrollment is the only bootstrap path. You mint a long-lived, **register-only** enrollment token in the dashboard and drop it into your agent process as an environment variable. On startup the SDK presents the token plus an `agentName`, and Rubric mints a fresh signed identity for that agent.
 
 ```python
 from rubric import Governance
@@ -63,7 +63,7 @@ A brand-new enrolled agent starts with no scoped policies — the SDK gets an em
 
 ## Naming
 
-`agentName` is what you pass to `bootstrap(agent_name=…)`. The control plane normalizes it into the agent's stable id (lowercase, dash-separated, max 128 chars).
+`agentName` is what you pass to `bootstrap(agent_name=…)`. Rubric normalizes it into the agent's stable id (lowercase, dash-separated, max 128 chars).
 
 Choose names that:
 

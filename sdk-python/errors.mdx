@@ -26,7 +26,7 @@ class GovernanceError(Exception):
 
 ## GovernanceProblemError
 
-Raised when the control plane returns an RFC 9457 problem response (e.g., `401 invalid_identity`, `403 forbidden`, `429`). Carries the parsed problem details.
+Raised when Rubric returns an RFC 9457 problem response (e.g., `401 invalid_identity`, `403 forbidden`, `429`). Carries the parsed problem details.
 
 ```python
 class GovernanceProblemError(GovernanceError):

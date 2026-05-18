@@ -103,7 +103,7 @@ spec:
           value: delete_file
 ```
 
-Save the draft, then click **Publish**. The control plane rebuilds the per-agent bundle for `quickstart-bot` to include this policy. Within ~30 seconds the SDK's bundle poller picks it up and the next `delete_file(...)` call raises `GovernanceDeniedError`.
+Save the draft, then click **Publish**. Rubric rebuilds the per-agent bundle for `quickstart-bot` to include this policy. Within ~30 seconds the SDK's bundle poller picks it up and the next `delete_file(...)` call raises `GovernanceDeniedError`.
 
 ## 5. Re-run and see the deny
 

@@ -34,10 +34,10 @@ if result.decision == "deny":
     The SDK packs `{ ts, agentId, sessionId, toolName, decision, policyId, policyVersion, latencyMs, metadata, traceId? }`. Deny code and reason go into `metadata.denyCode` / `metadata.denyReason`. DLP detection goes into `metadata.dlp`.
   </Step>
   <Step title="Upload trace (if attached)">
-    If a `TraceContext` was passed, the SDK appends a `ToolCallMessage` and uploads the running messages array to the control plane. The returned `traceId` and position are attached to the audit event.
+    If a `TraceContext` was passed, the SDK appends a `ToolCallMessage` and uploads the running messages array to Rubric. The returned `traceId` and position are attached to the audit event.
   </Step>
   <Step title="Enqueue audit event">
-    The event goes into the audit sink's in-memory queue. The flush thread batches up to 100 events or 1 second of latency and ships them to the control plane. **Your code does not wait on the network.**
+    The event goes into the audit sink's in-memory queue. The flush thread batches up to 100 events or 1 second of latency and ships them to Rubric. **Your code does not wait on the network.**
   </Step>
   <Step title="Return EvaluationResult">
     `result.decision`, `result.reason`, `result.code`, `result.matchedPolicyId`, `result.matchedRuleId`, `result.latencyMs` are returned synchronously.
@@ -53,7 +53,7 @@ The synchronous portion of `evaluate()` is dominated by:
 - DLP scan: **~50µs** (regex), **~1ms** (Presidio).
 - Trace upload (if attached): **2–5ms** — runs synchronously to give you `traceId` for the audit event. If you don't need traces, omit the parameter.
 
-Without traces and without DLP, `evaluate()` finishes in well under 1ms on a modern laptop. With traces it's bounded by your network RTT to the control plane.
+Without traces and without DLP, `evaluate()` finishes in well under 1ms on a modern laptop. With traces it's bounded by your network RTT to Rubric.
 
 ## What goes in the audit event
 

@@ -1,0 +1,131 @@
+---
+title: "Core building blocks"
+description: "The four primitives exported from @rubric-app/core."
+icon: "blocks"
+---
+
+`@rubric-app/core` exports four classes that compose into a complete adapter: `TokenStore`, `BundlePoller`, `Evaluator`, and `AuditSink`. Each runs independently; you wire them together at boot.
+
+If you're using Claude Code, the [Claude Code adapter](/adapters/claude-code) wires these for you and you don't need this page.
+
+## `TokenStore`
+
+JWT-SVID identity store. Exchanges your enrollment token for a 60-minute signed identity at boot and refreshes it before expiry.
+
+```ts
+import { bootstrapTokenStore } from '@rubric-app/core';
+
+const tokenStore = await bootstrapTokenStore({
+  apiUrl: 'https://api.rubric-app.com',
+  agentName: 'my-agent',
+  enrollmentToken: process.env.AG_ENROLLMENT_TOKEN!,
+});
+
+tokenStore.agentId;   // 'agent-abc123' — stable id from the dashboard
+tokenStore.token();   // current signed JWT; auto-refreshed in the background
+```
+
+`bootstrapTokenStore` performs the initial enrollment and starts the refresh loop. Call `tokenStore.stop()` on shutdown.
+
+## `BundlePoller`
+
+Pulls your policy bundle from Rubric every 30 seconds (configurable). Calls `onUpdate(bundle)` whenever the content hash changes.
+
+```ts
+import { BundlePoller, Evaluator } from '@rubric-app/core';
+
+const evaluator = new Evaluator();
+const poller = new BundlePoller({
+  apiUrl: 'https://api.rubric-app.com',
+  tokenStore,
+  onUpdate: (bundle) => evaluator.updateBundle(bundle),
+});
+poller.start();
+await poller.firstPullDone(10_000);   // wait up to 10s for the first bundle
+```
+
+The poller rejects bundles whose `bundleVersion` is lower than the cached one or whose `builtAt` is meaningfully older than the cached `builtAt`. Inspect `poller.lastPullAt` and `poller.lastBundleChangeAt` to detect stuck or rolled-back states.
+
+## `Evaluator`
+
+Synchronous, in-process policy evaluator. Takes an `EvaluationRequest` and returns an `EvaluationResult` in well under 1ms.
+
+```ts
+const result = evaluator.evaluate({
+  tool_name: 'Bash',
+  agent_id: tokenStore.agentId,
+  input: { command: 'rm -rf /tmp/foo' },
+});
+
+result.decision;          // 'allow' | 'deny'
+result.matchedPolicyId;   // null if no rule matched (defaultEffect path)
+result.matchedRuleId;     // id of the rule that matched, if any
+result.code;              // 'AGENT_FROZEN' | 'NO_POLICIES' | 'POLICY_COMPILE_ERROR' | 'EVAL_TIMEOUT' for deny codes
+result.reason;            // human-readable reason for surface deny paths
+result.latencyMs;
+```
+
+Full API surface in [Evaluator](/sdk-node/evaluator).
+
+## `AuditSink`
+
+Batched, retried shipper for audit events. `enqueue()` is synchronous and never blocks; a background flush task ships events to Rubric.
+
+```ts
+import { AuditSink } from '@rubric-app/core';
+
+const audit = new AuditSink({
+  apiUrl: 'https://api.rubric-app.com',
+  tokenStore,
+  onError: (err) => console.error('audit error', err),
+});
+audit.start();
+
+audit.enqueue({
+  agentId: tokenStore.agentId,
+  sessionId: 'session-1',
+  ts: new Date().toISOString(),
+  toolName: 'Bash',
+  decision: result.decision,
+  policyId: result.matchedPolicyId ?? null,
+  policyVersion: result.matchedPolicyVersion ?? null,
+  latencyMs: result.latencyMs,
+});
+
+audit.getStats();   // { enqueued, sent, dropped4xx, dropped5xx, droppedQueueFull, queueDepth }
+```
+
+The default queue cap is 10,000 events. When full, new events are dropped and `droppedQueueFull` increments. Wire this to your monitoring so you can alarm on silent drops.
+
+Call `audit.stop(drainTimeoutMs)` on shutdown to flush remaining events synchronously up to the deadline.
+
+## Composing them into an adapter
+
+A complete adapter is just these four pieces wired together. See the [Claude Code adapter source on GitHub](https://github.com/getrubric/sdk/blob/main/packages/claude-code/src/daemon/run.ts) for a working example.
+
+```ts
+import {
+  AuditSink,
+  BundlePoller,
+  Evaluator,
+  bootstrapTokenStore,
+} from '@rubric-app/core';
+
+const tokenStore = await bootstrapTokenStore({ /* ... */ });
+const evaluator = new Evaluator();
+const bundlePoller = new BundlePoller({
+  tokenStore,
+  apiUrl,
+  onUpdate: (bundle) => evaluator.updateBundle(bundle),
+});
+bundlePoller.start();
+await bundlePoller.firstPullDone(10_000);
+
+const audit = new AuditSink({ tokenStore, apiUrl });
+audit.start();
+
+// In your framework's tool dispatch:
+//   1. evaluator.evaluate(request) → decision
+//   2. audit.enqueue(event)
+//   3. throw / continue based on decision
+```

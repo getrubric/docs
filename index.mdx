@@ -5,19 +5,22 @@ sidebarTitle: "Introduction"
 icon: "shield-check"
 ---
 
-Rubric is a control plane for the agents you ship. It gives every agent a cryptographic identity, evaluates every tool call against your policy bundle, and writes a tamper-evident audit log.
+Rubric gives every agent you ship a cryptographic identity, evaluates every tool call against your policy bundle, and writes a tamper-evident audit log.
 
-The SDK is a Python library you drop into your agent process. The control plane is the API + dashboard your operators use.
+You drop the SDK into your agent process. Your operators author policies and watch the audit log in the dashboard. SDKs are available for Python and Node.
 
 <CardGroup cols={2}>
   <Card title="5-minute quickstart" icon="rocket" href="/guides/quickstart">
     Install the SDK, enroll your first agent, and watch a denied call land in the dashboard.
   </Card>
-  <Card title="How Rubric works" icon="diagram-project" href="/concepts/architecture">
-    Control plane, SDK, bundle pulls, audit ingest — the moving parts.
+  <Card title="How it works" icon="diagram-project" href="/concepts/architecture">
+    What the SDK does in your process and what it sends over the wire.
   </Card>
   <Card title="Write a policy" icon="file-shield" href="/concepts/policies">
     YAML in the dashboard, versioned and dry-runnable. Conditions, effects, scope.
+  </Card>
+  <Card title="Govern Claude Code" icon="terminal" href="/adapters/claude-code">
+    `npm i -g @rubric-app/claude-code` — gate your developer's own Claude Code install through your policies.
   </Card>
 </CardGroup>
 
@@ -70,8 +73,8 @@ If you're using a framework, the adapter wraps your tools so you don't write any
 
 ## Govern Claude Code
 
-A different shape: Rubric also ships a CLI that gates your **developer's own** Claude Code install through the same control plane. Same policy authoring, same dashboard, same audit log — different host. Useful when the AI agent you're worried about isn't one you wrote.
+A different shape: Rubric also ships a CLI that gates your **developer's own** Claude Code install through the same policies. Same policy authoring, same dashboard, same audit log — different host. Useful when the AI agent you're worried about isn't one you wrote.
 
 <Card title="Claude Code adapter" icon="terminal" href="/adapters/claude-code">
-  `npx @rubric/claude-code init` — installs a loopback daemon that runs every Claude Code tool call through your bundle. Survives reboots via launchd/systemd. Three SDLC starter templates included.
+  `npm i -g @rubric-app/claude-code && rubric init` — installs a loopback daemon that runs every Claude Code tool call through your bundle. Survives reboots via launchd/systemd.
 </Card>
