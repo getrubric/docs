@@ -1,0 +1,21 @@
+---
+title: "Changelog"
+description: "New features, updates, and fixes shipped to Rubric."
+mode: "center"
+---
+
+<Update label="May 22, 2026">
+
+## Updates
+
+**Python SDK is now `rubric-app` on PyPI**
+
+The Python SDK has moved to a new PyPI package name: `rubric-app`. The old `rubric` name on PyPI belongs to an unrelated project, so we switched to `rubric-app` to match the [`@rubric-app`](https://www.npmjs.com/org/rubric-app) npm scope.
+
+What this means for you:
+
+- New installs use `pip install rubric-app` (and the same for `uv`, `poetry`, and extras like `[mcp]`, `[runtime]`, `[presidio]`).
+- The import name is unchanged — `import rubric` and `from rubric import ...` keep working. No code changes required.
+- See the updated [installation guide](/guides/installation) and [quickstart](/guides/quickstart) for the new commands.
+
+</Update>
